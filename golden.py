@@ -11,6 +11,17 @@ max_it = 1000
 it = 0
 
 
+def save_to_file(matrix, filename):
+    # Flatten the matrix (row-major order, C-style) and save as raw float32 data.
+    # This format is easy to read linearly in C++.
+    matrix.astype(np.float32).tofile(filename)
+
+
+def read_from_file(filename, shape):
+    # Read raw float32 data from file and reshape it.
+    return np.fromfile(filename, dtype=np.float32).reshape(shape)
+
+
 def jacobi(p0):
     global max_it
     global it
@@ -31,8 +42,8 @@ def jacobi(p0):
 
 
 # Grid parameters.
-nx = 101                  # number of points in the x direction
-ny = 101                  # number of points in the y direction
+nx = 32                  # number of points in the x direction
+ny = 32                  # number of points in the y direction
 xmin, xmax = 0.0, 1.0     # limits in the x direction
 ymin, ymax = -0.5, 0.5    # limits in the y direction
 lx = xmax - xmin          # domain length in the x direction
@@ -45,13 +56,15 @@ y = np.linspace(ymin, ymax, ny)
 X, Y = np.meshgrid(x, y, indexing='ij')
 
 
-# Compute the rhs
-p0 = (np.sin(np.pi*X)*np.cos(np.pi*Y)
-      + np.sin(5.0*np.pi*X)*np.cos(5.0*np.pi*Y))
+# p0 = (np.sin(np.pi*X)*np.cos(np.pi*Y)
+#       + np.sin(5.0*np.pi*X)*np.cos(5.0*np.pi*Y))
+p0 = np.ones((nx, ny), dtype=np.float32)
+save_to_file(p0, "input.bin")
+print(p0[-1])
 
 plt.figure()
 # Usa pcolormesh para criar um mapa de cores 2D de b sobre a grade (X, Y)
-plt.pcolormesh(X, Y, p0, shading='auto')
+plt.imshow(p0, origin="upper", interpolation="nearest")
 plt.title('RHS (b) da equação de Jacobi/Poisson')
 plt.xlabel('X')
 plt.ylabel('Y')
@@ -59,10 +72,12 @@ plt.colorbar(label='Valor de b')
 plt.show()
 
 # Compute the exact solution
-p_e = jacobi(p0)
+# p_e = jacobi(p0)
+p_e = read_from_file("output.bin", p0.shape)
 plt.figure()
 # Usa pcolormesh para criar um mapa de cores 2D de b sobre a grade (X, Y)
-plt.pcolormesh(X, Y, p_e, shading='auto')
+# plt.pcolormesh(X, Y, p_e, shading='auto')
+plt.imshow(p_e, origin="upper", interpolation="nearest")
 plt.title('RHS (b) da equação de Jacobi/Poisson')
 plt.xlabel('X')
 plt.ylabel('Y')
