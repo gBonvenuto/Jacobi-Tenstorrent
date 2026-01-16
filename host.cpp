@@ -264,7 +264,6 @@ int main() {
         std::vector<float> result_vec_float(result_vec.size());
 
         for (size_t i = 0; i < result_vec.size(); ++i) {
-            // result_vec_float[i] = (float)result_vec[i];
             result_vec_float[i] = (float)result_vec[i];
         }
 
