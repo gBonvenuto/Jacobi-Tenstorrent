@@ -24,7 +24,7 @@ void kernel_main() {
 
     constexpr uint32_t cb_in = tt::CBIndex::c_0;
     constexpr uint32_t cb_L = tt::CBIndex::c_1;
-    constexpr uint32_t cb_U = tt::CBIndex::c_1;
+    constexpr uint32_t cb_U = tt::CBIndex::c_2;
 
     const uint32_t tile_size_bytes = get_tile_size(cb_in);
 
