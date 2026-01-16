@@ -1,7 +1,16 @@
+import sys
 import numpy as np
 import matplotlib.pyplot as plt
+import subprocess
 
-import sys
+exec_path = "./run_script.sh"
+
+# MODES:
+# - python
+# - tenstorrent
+MODE = "tenstorrent"
+print("MODE:", MODE)
+
 sys.setrecursionlimit(2000)
 
 # Esse script serve para eu aprender a fazer um algoritmo simples de
@@ -23,22 +32,35 @@ def read_from_file(filename, shape):
 
 
 def jacobi(p0):
-    global max_it
-    global it
-    pnew = p0.copy()
-    if it > max_it:
-        print("Chegamos na iteração máxima, retornando...")
-        return p0
-    for i in range(1, nx-1):
-        for j in range(1, ny-1):
-            pnew[i, j] = 0.25*(
-                p0[i-1, j]  # esquerda
-                + p0[i+1, j]  # direita
-                + p0[i, j-1]  # baixo
-                + p0[i, j+1]  # cima
-            )
-    it = it + 1
-    return jacobi(pnew)
+    global MODE
+    if MODE == "tenstorrent":
+        print("running tenstorrent")
+        cmd = ["bash", exec_path]
+
+        with subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True,
+                              bufsize=1) as processo:
+            for linha in processo.stdout:
+                print(linha, end='', flush=True)
+
+        return read_from_file("output.bin", p0.shape)
+    if MODE == "python":
+        global max_it
+        global it
+        pnew = p0.copy()
+        if it > max_it:
+            print("Chegamos na iteração máxima, retornando...")
+            return p0
+        for i in range(1, nx-1):
+            for j in range(1, ny-1):
+                pnew[i, j] = 0.25*(
+                    p0[i-1, j]  # esquerda
+                    + p0[i+1, j]  # direita
+                    + p0[i, j-1]  # baixo
+                    + p0[i, j+1]  # cima
+                )
+        it = it + 1
+        return jacobi(pnew)
 
 
 # Grid parameters.
@@ -72,8 +94,7 @@ plt.colorbar(label='Valor de b')
 plt.show()
 
 # Compute the exact solution
-# p_e = jacobi(p0)
-p_e = read_from_file("output.bin", p0.shape)
+p_e = jacobi(p0)
 plt.figure()
 # Usa pcolormesh para criar um mapa de cores 2D de b sobre a grade (X, Y)
 # plt.pcolormesh(X, Y, p_e, shading='auto')
