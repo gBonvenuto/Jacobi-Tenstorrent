@@ -41,3 +41,4 @@
 *.dwo
 input.bin
 output.bin
+build_Debug
