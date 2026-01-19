@@ -16,7 +16,7 @@ sys.setrecursionlimit(2000)
 # Esse script serve para eu aprender a fazer um algoritmo simples de
 # Jacobi
 
-max_it = 1000
+max_it = 1
 it = 0
 
 
@@ -48,17 +48,11 @@ def jacobi(p0):
         global max_it
         global it
         pnew = p0.copy()
-        if it > max_it:
+        if it >= max_it:
             print("Chegamos na iteração máxima, retornando...")
             return p0
-        for i in range(1, nx-1):
-            for j in range(1, ny-1):
-                pnew[i, j] = 0.25*(
-                    p0[i-1, j]  # esquerda
-                    + p0[i+1, j]  # direita
-                    + p0[i, j-1]  # baixo
-                    + p0[i, j+1]  # cima
-                )
+        pnew[1:-1, 1:-1] = 0.25 * (p0[0:-2, 1:-1] + p0[2:, 1:-1] +
+                                   p0[1:-1, 0:-2] + p0[1:-1, 2:])
         it = it + 1
         return jacobi(pnew)
 
@@ -80,7 +74,25 @@ X, Y = np.meshgrid(x, y, indexing='ij')
 
 # p0 = (np.sin(np.pi*X)*np.cos(np.pi*Y)
 #       + np.sin(5.0*np.pi*X)*np.cos(5.0*np.pi*Y))
-p0 = np.ones((nx, ny), dtype=np.float32)
+
+tamanho_matriz = 32
+tamanho_quadrado = 10  # Você pode mudar esse valor
+
+# 2. Crie a matriz de zeros (fundo preto)
+p0 = np.zeros((tamanho_matriz, tamanho_matriz), dtype=np.float32)
+
+# 3. Calcule onde o quadrado começa e termina para ficar centralizado
+inicio = (tamanho_matriz - tamanho_quadrado) // 2
+fim = inicio + tamanho_quadrado
+
+# 4. Aplique o valor 1 na região central (fatiamento)
+p0[inicio:fim, inicio:fim] = 1
+
+# --- Visualização Simples no Terminal ---
+# Como 32x32 é grande, vamos imprimir de um jeito que dê para ver o desenho
+for linha in p0:
+    print(' '.join(str(x) for x in linha).replace('0', '.').replace('1', '#'))
+
 save_to_file(p0, "input.bin")
 print(p0[-1])
 
