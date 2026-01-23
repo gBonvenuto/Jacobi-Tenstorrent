@@ -16,7 +16,7 @@ sys.setrecursionlimit(2000)
 # Esse script serve para eu aprender a fazer um algoritmo simples de
 # Jacobi
 
-max_it = 1
+max_it = 1000
 it = 0
 
 
@@ -99,7 +99,7 @@ print(p0[-1])
 plt.figure()
 # Usa pcolormesh para criar um mapa de cores 2D de b sobre a grade (X, Y)
 plt.imshow(p0, origin="upper", interpolation="nearest")
-plt.title('RHS (b) da equação de Jacobi/Poisson')
+plt.title('Input')
 plt.xlabel('X')
 plt.ylabel('Y')
 plt.colorbar(label='Valor de b')
@@ -111,7 +111,7 @@ plt.figure()
 # Usa pcolormesh para criar um mapa de cores 2D de b sobre a grade (X, Y)
 # plt.pcolormesh(X, Y, p_e, shading='auto')
 plt.imshow(p_e, origin="upper", interpolation="nearest")
-plt.title('RHS (b) da equação de Jacobi/Poisson')
+plt.title('Output')
 plt.xlabel('X')
 plt.ylabel('Y')
 plt.colorbar(label='Valor de b')
