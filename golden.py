@@ -57,36 +57,37 @@ def jacobi(p0):
         return jacobi(pnew)
 
 
-# Grid parameters.
-nx = 32                  # number of points in the x direction
-ny = 32                  # number of points in the y direction
-xmin, xmax = 0.0, 1.0     # limits in the x direction
-ymin, ymax = -0.5, 0.5    # limits in the y direction
-lx = xmax - xmin          # domain length in the x direction
-ly = ymax - ymin          # domain length in the y direction
-dx = lx / (nx-1)          # grid spacing in the x direction
-dy = ly / (ny-1)          # grid spacing in the y direction
+# Grid parameters
+nx = 64                  # largura (colunas)
+ny = 32                  # altura (linhas)
+xmin, xmax = 0.0, 64.0    # Aumentei o domínio X para manter a proporção da malha
+ymin, ymax = 0.0, 32.0    # Ajustei Y para começar do 0 (mais intuitivo)
+lx = xmax - xmin
+ly = ymax - ymin
+dx = lx / (nx-1)
+dy = ly / (ny-1)
 
-x = np.linspace(xmin, xmax, nx)
-y = np.linspace(ymin, ymax, ny)
-X, Y = np.meshgrid(x, y, indexing='ij')
+x = np.linspace(xmin, xmax)
+y = np.linspace(ymin, ymax)
+X, Y = np.meshgrid(x, y, indexing='xy')
 
+# --- Inicialização da Matriz ---
+# Numpy usa formato (linhas, colunas) -> (ny, nx)
+p0 = np.zeros((ny, nx), dtype=np.float32)
 
-# p0 = (np.sin(np.pi*X)*np.cos(np.pi*Y)
-#       + np.sin(5.0*np.pi*X)*np.cos(5.0*np.pi*Y))
+# Definindo o quadrado centralizado dinamicamente
+tamanho_quadrado_x = 20  # Mais largo pois a matriz é mais larga
+tamanho_quadrado_y = 10
 
-tamanho_matriz = 32
-tamanho_quadrado = 10  # Você pode mudar esse valor
+centro_y, centro_x = ny // 2, nx // 2
 
-# 2. Crie a matriz de zeros (fundo preto)
-p0 = np.zeros((tamanho_matriz, tamanho_matriz), dtype=np.float32)
+# Fatiamento (Slicing) para desenhar o quadrado
+inicio_y = centro_y - (tamanho_quadrado_y // 2)
+fim_y = centro_y + (tamanho_quadrado_y // 2)
+inicio_x = centro_x - (tamanho_quadrado_x // 2)
+fim_x = centro_x + (tamanho_quadrado_x // 2)
 
-# 3. Calcule onde o quadrado começa e termina para ficar centralizado
-inicio = (tamanho_matriz - tamanho_quadrado) // 2
-fim = inicio + tamanho_quadrado
-
-# 4. Aplique o valor 1 na região central (fatiamento)
-p0[inicio:fim, inicio:fim] = 1
+p0[inicio_y:fim_y, inicio_x:fim_x] = 1
 
 # --- Visualização Simples no Terminal ---
 # Como 32x32 é grande, vamos imprimir de um jeito que dê para ver o desenho
@@ -99,7 +100,7 @@ print(p0[-1])
 plt.figure()
 # Usa pcolormesh para criar um mapa de cores 2D de b sobre a grade (X, Y)
 plt.imshow(p0, origin="upper", interpolation="nearest")
-plt.title('RHS (b) da equação de Jacobi/Poisson')
+plt.title("Input")
 plt.xlabel('X')
 plt.ylabel('Y')
 plt.colorbar(label='Valor de b')
@@ -111,7 +112,7 @@ plt.figure()
 # Usa pcolormesh para criar um mapa de cores 2D de b sobre a grade (X, Y)
 # plt.pcolormesh(X, Y, p_e, shading='auto')
 plt.imshow(p_e, origin="upper", interpolation="nearest")
-plt.title('RHS (b) da equação de Jacobi/Poisson')
+plt.title("Output")
 plt.xlabel('X')
 plt.ylabel('Y')
 plt.colorbar(label='Valor de b')
