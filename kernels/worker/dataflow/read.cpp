@@ -4,8 +4,7 @@
 
 // **Runtime arguments**
 //
-// * inA_addr
-// * inB_addr
+// * in_addr
 // * tile_offset
 // * n_tiles
 // * n_iterations
@@ -28,8 +27,7 @@
 //
 void kernel_main() {
     DPRINT << "inicializando Reader" << ENDL();
-    const uint32_t inA_addr = get_arg_val<uint32_t>(0);
-    const uint32_t inB_addr = get_arg_val<uint32_t>(1);
+    const uint32_t in_addr = get_arg_val<uint32_t>(0);
     const uint32_t tile_offset = get_arg_val<uint32_t>(2);
     // TODO: estamos sempre assumindo que será uma tile por core.
     // Se isso mudar, precisamos mudar o código
@@ -71,13 +69,10 @@ void kernel_main() {
 
     // NOTE: Precisamos de dois vetores de entrada para não correr o risco
     // de sobrescrever
-    constexpr auto inA_args = TensorAccessorArgs<0>();
-    const auto inA = TensorAccessor(inA_args, inA_addr, tile_size_bytes);
+    constexpr auto in_args = TensorAccessorArgs<0>();
+    const auto in = TensorAccessor(in_args, in_addr, tile_size_bytes);
 
-    constexpr auto inB_args = TensorAccessorArgs<inA_args.next_compile_time_args_offset()>();
-    const auto inB = TensorAccessor(inB_args, inB_addr, tile_size_bytes);
-
-    constexpr auto L_args = TensorAccessorArgs<inB_args.next_compile_time_args_offset()>();
+    constexpr auto L_args = TensorAccessorArgs<in_args.next_compile_time_args_offset()>();
     const auto L_dram = TensorAccessor(L_args, L_dram_addr, tile_size_bytes);
 
     constexpr auto U_args = TensorAccessorArgs<L_args.next_compile_time_args_offset()>();
@@ -110,9 +105,6 @@ void kernel_main() {
 
     DPRINT << "começando uma iteração" << ENDL();
 
-    bool current_in = true;  // true: inA
-                             // false: inB
-
     const uint32_t left_offset = tile_offset - 1;
     const uint32_t right_offset = tile_offset + 1;
     const uint32_t top_offset = tile_offset - width;
@@ -120,7 +112,7 @@ void kernel_main() {
 
     for (uint32_t i = 0; i < n_iterations; i++) {
         DPRINT << "Esperando sem_start" << ENDL();
-        noc_semaphore_wait(sem_start_ptr, i+1);  // esperamos o start virar 1
+        noc_semaphore_wait(sem_start_ptr, i + 1);  // esperamos o start virar 1
         DPRINT << "start!!" << ENDL();
 
         cb_reserve_back(cb_in, 1);
@@ -129,38 +121,20 @@ void kernel_main() {
         cb_reserve_back(cb_top, 1);
         cb_reserve_back(cb_bottom, 1);
 
-        if (current_in) {
-            noc_async_read_tile(tile_offset, inA, get_write_ptr(cb_in));
-            if (has_left) {
-                noc_async_read_tile(left_offset, inA, get_write_ptr(cb_left));
-            }
-            if (has_right) {
-                noc_async_read_tile(right_offset, inA, get_write_ptr(cb_right));
-            }
-            if (has_top) {
-                noc_async_read_tile(top_offset, inA, get_write_ptr(cb_top));
-            }
-            if (has_bottom) {
-                noc_async_read_tile(bottom_offset, inA, get_write_ptr(cb_bottom));
-            }
-            DPRINT << "lendo do inA" << ENDL();
-        } else {
-            noc_async_read_tile(tile_offset, inB, get_write_ptr(cb_in));
-            if (has_left) {
-                noc_async_read_tile(left_offset, inB, get_write_ptr(cb_left));
-            }
-            if (has_right) {
-                noc_async_read_tile(right_offset, inB, get_write_ptr(cb_right));
-            }
-            if (has_top) {
-                noc_async_read_tile(top_offset, inB, get_write_ptr(cb_top));
-            }
-            if (has_bottom) {
-                noc_async_read_tile(bottom_offset, inB, get_write_ptr(cb_bottom));
-            }
-            DPRINT << "lendo do inB" << ENDL();
+        noc_async_read_tile(tile_offset, in, get_write_ptr(cb_in));
+        if (has_left) {
+            noc_async_read_tile(left_offset, in, get_write_ptr(cb_left));
         }
-        current_in = !current_in;
+        if (has_right) {
+            noc_async_read_tile(right_offset, in, get_write_ptr(cb_right));
+        }
+        if (has_top) {
+            noc_async_read_tile(top_offset, in, get_write_ptr(cb_top));
+        }
+        if (has_bottom) {
+            noc_async_read_tile(bottom_offset, in, get_write_ptr(cb_bottom));
+        }
+        DPRINT << "lendo do in" << ENDL();
 
         noc_async_read_barrier();  // Esperamos terminar de ler
 
