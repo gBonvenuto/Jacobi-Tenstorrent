@@ -20,8 +20,7 @@
 //
 // **Compiletime arguments**
 //
-// * inA TensorAccessorArgs
-// * inB TensorAccessorArgs
+// * in TensorAccessorArgs
 // * L TensorAccessorArgs
 // * U TensorAccessorArgs
 //

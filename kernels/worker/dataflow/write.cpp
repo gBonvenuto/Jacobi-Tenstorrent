@@ -4,8 +4,7 @@
 
 // **Runtime arguments**
 //
-// * inA_addr
-// * inB_addr
+// * in_addr
 // * tile_offset
 // * n_tiles
 // * n_iterations
@@ -16,10 +15,8 @@
 // **Compiletime arguments**
 //
 // * inA TensorAccessorArgs
-// * inB TensorAccessorArgs
 void kernel_main() {
-    const uint32_t inA_addr = get_arg_val<uint32_t>(0);
-    const uint32_t inB_addr = get_arg_val<uint32_t>(1);
+    const uint32_t in_addr = get_arg_val<uint32_t>(0);
     const uint32_t tile_offset = get_arg_val<uint32_t>(2);
     const uint32_t n_tiles = get_arg_val<uint32_t>(3);
     const uint32_t n_iterations = get_arg_val<uint32_t>(4);
@@ -30,33 +27,20 @@ void kernel_main() {
     constexpr uint32_t cb_out = tt::CBIndex::c_16;
     const uint32_t tile_size_bytes = get_tile_size(cb_out);
 
-    constexpr auto inA_args = TensorAccessorArgs<0>();
-    const auto inA = TensorAccessor(inA_args, inA_addr, tile_size_bytes);
-
-    constexpr auto inB_args = TensorAccessorArgs<inA_args.next_compile_time_args_offset()>();
-    const auto inB = TensorAccessor(inB_args, inB_addr, tile_size_bytes);
+    constexpr auto in_args = TensorAccessorArgs<0>();
+    const auto in = TensorAccessor(in_args, in_addr, tile_size_bytes);
 
     // Tudo que precisamos fazer é esperar ter um dado no cb_out
     // e quando tiver enviamos para a DRAM
 
     const auto sem_computed_noc = get_noc_addr(control_x, control_y, sem_computed);
 
-    // NOTE: A escrita é o oposto da leitura
-    bool current_out = false;  // true: inA
-                               // false: inB
-
     for (uint32_t i = 0; i < n_iterations; i++) {
         cb_wait_front(cb_out, 1);
         DPRINT << "comecei a enviar o dado da L1 para a DRAM" << ENDL();
 
-        if (current_out) {
-            noc_async_write_tile(tile_offset, inA, get_read_ptr(cb_out));
-            DPRINT << "escrevendo no inA" << ENDL();
-        } else {
-            noc_async_write_tile(tile_offset, inB, get_read_ptr(cb_out));
-            DPRINT << "escrevendo no inB" << ENDL();
-        }
-        current_out = !current_out;
+        noc_async_write_tile(tile_offset, in, get_read_ptr(cb_out));
+        DPRINT << "escrevendo no inA" << ENDL();
 
         noc_async_write_barrier();
 
