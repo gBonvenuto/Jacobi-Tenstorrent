@@ -1,4 +1,5 @@
 #include <fmt/ostream.h>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
@@ -30,6 +31,7 @@ using namespace tt::tt_metal;
 #endif
 
 // Retorna uma matriz após ler um arquivo
+// WARNING: assume que a matriz é quadrada
 std::vector<float> read_matrix_from_file(const std::string& filename) {
     std::ifstream file(filename, std::ios::binary);
     file.seekg(0, std::ios::end);
@@ -37,6 +39,12 @@ std::vector<float> read_matrix_from_file(const std::string& filename) {
     file.seekg(0, std::ios::beg);
     std::vector<float> data(size / sizeof(float));
     file.read(reinterpret_cast<char*>(data.data()), size);
+    double element_count = data.size();
+    double dimension = sqrt(element_count);
+    fmt::print("A dimensão é {}\n", dimension);
+    if (floor(dimension) != dimension) {
+        TT_THROW("A Matriz não é quadrada ({} elementos)", element_count);
+    }
     return data;
 }
 
@@ -48,17 +56,47 @@ void write_matrix_to_file(const std::string& filename, const std::vector<float>&
 }
 
 int main() {
+    uint32_t num_iterations;
+    printf("Quantas iterações: ");
+    scanf("%d", &num_iterations);
     // bool pass = true;
     try {
+        // INFO: Buffers
+
+        fmt::print("lendo input.bin\n");
+        std::vector<float> in_float = read_matrix_from_file(
+            "/home/gian/Documentos/Unicamp/GeoBench/Tenstorrent/tt-metal/tt_metal/programming_examples/"
+            "Jacobi_Tenstorrent/input.bin");
+
+        std::vector<bfloat16> in(in_float.size());
+
+        fmt::print("input: float -> bfloat\n");
+
+        for (size_t i = 0; i < in_float.size(); ++i) {
+            in[i] = bfloat16(in_float[i]);
+        }
         constexpr int device_id = 0;
         std::shared_ptr<distributed::MeshDevice> mesh_device = distributed::MeshDevice::create_unit_mesh(device_id);
 
         distributed::MeshCommandQueue& cq = mesh_device->mesh_command_queue();
 
         // INFO: Core Range
+        const double matrix_side_d = std::sqrt(static_cast<double>(in.size()));
+        const uint32_t matrix_side = static_cast<uint32_t>(std::llround(matrix_side_d));
+        TT_FATAL(
+            static_cast<size_t>(matrix_side) * static_cast<size_t>(matrix_side) == in.size(),
+            "A matriz de entrada precisa ser quadrada ({} elementos)",
+            in.size());
+        TT_FATAL(
+            matrix_side % tt::constants::TILE_WIDTH == 0,
+            "A dimensão {} não é múltiplo de {} (tamanho da tile)",
+            matrix_side,
+            tt::constants::TILE_WIDTH);
+        const uint32_t width = matrix_side / tt::constants::TILE_WIDTH;
+        const uint32_t height = width;
         constexpr CoreCoord core_controle = {0, 0};
         constexpr CoreCoord core0 = {0, 1};
-        constexpr CoreCoord core1 = {1, 1};
+        const CoreCoord core1 = {width - 1, height};
         // const auto core0_physical_coord = mesh_device->worker_core_from_logical_core(core0);
         // const auto core1_physical_coord = mesh_device->worker_core_from_logical_core(core1);
 
@@ -73,25 +111,6 @@ int main() {
         distributed::MeshWorkload workload;
         auto device_range = distributed::MeshCoordinateRange(mesh_device->shape());
 
-        // INFO: Buffers
-
-        fmt::print("lendo input.bin\n");
-        std::vector<float> in_float = read_matrix_from_file(
-            "/home/gian/Documentos/Unicamp/GeoBench/Tenstorrent/tt-metal/tt_metal/programming_examples/"
-            "Jacobi_Tenstorrent/input.bin");
-
-        std::vector<bfloat16> in(in_float.size());
-
-        fmt::print("input: float -> bfloat\n");
-        for (size_t i = 0; i < in_float.size(); ++i) {
-            in[i] = bfloat16(in_float[i]);
-        }
-
-        const uint32_t width = worker_cores.end_coord.x - worker_cores.start_coord.x + 1;
-        const uint32_t height = worker_cores.end_coord.y - worker_cores.start_coord.y + 1;
-        uint32_t num_iterations;
-        fmt::print("Quantas iterações: ");
-        scanf("%d", &num_iterations);
         constexpr uint32_t elements_per_tile = tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT;
         const uint32_t num_tiles = in.size() / elements_per_tile;
         constexpr uint32_t tile_size_bytes = sizeof(bfloat16) * elements_per_tile;
@@ -347,9 +366,12 @@ int main() {
         uint32_t LL_addr = LL_dram_buffer->address();
         uint32_t UU_addr = UU_dram_buffer->address();
 
-        uint32_t offset = 0;
-        for (auto& core : corerange_to_cores(worker_cores)) {
-            fmt::print("Criando RuntimeArgs para {}\n", core.str());
+        for (const auto& core : corerange_to_cores(worker_cores)) {
+            const uint32_t logical_x = core.x - worker_cores.start_coord.x;
+            const uint32_t logical_y = core.y - worker_cores.start_coord.y;
+            const uint32_t tile_offset = logical_y * width + logical_x;
+
+            fmt::print("Criando RuntimeArgs para {} (tile_offset={})\n", core.str(), tile_offset);
             SetRuntimeArgs(
                 program,
                 reader,
@@ -357,7 +379,7 @@ int main() {
                 {
                     inA_addr,
                     inB_addr,
-                    offset,
+                    tile_offset,
                     /* num_tiles =*/(uint32_t)1,
                     num_iterations,
                     L_addr,
@@ -365,8 +387,8 @@ int main() {
                     LL_addr,
                     UU_addr,
                     sem_id_start,
-                    core.x - worker_cores.start_coord.x,
-                    core.y - worker_cores.start_coord.y,
+                    logical_x,
+                    logical_y,
                     width,
                     height,
                 });
@@ -378,8 +400,8 @@ int main() {
                 {
                     /* num_tiles= */ 1,
                     num_iterations,
-                    core.x - worker_cores.start_coord.x,
-                    core.y - worker_cores.start_coord.y,
+                    logical_x,
+                    logical_y,
                     width,
                     height,
                 });
@@ -391,21 +413,21 @@ int main() {
                 {
                     inA_addr,
                     inB_addr,
-                    offset,
+                    tile_offset,
                     /*num_tiles =*/1,
                     num_iterations,
                     sem_id_computed,
                     control_phys.x,
                     control_phys.y,
                 });
-
-            offset += 1;  // WARNING: assumindo uma tile por core
         }
 
         // E escrevemos todos eles na DRAM do device
         fmt::print("Escrevendo os buffers na DRAM\n");
         distributed::EnqueueWriteMeshBuffer(
-            cq, dram_buffer_A, tilize_nfaces(in, tt::constants::TILE_HEIGHT*height, tt::constants::TILE_WIDTH*width));
+            cq,
+            dram_buffer_A,
+            tilize_nfaces(in, tt::constants::TILE_HEIGHT * height, tt::constants::TILE_WIDTH * width));
         distributed::EnqueueWriteMeshBuffer(
             cq, L_dram_buffer, tilize_nfaces(L, tt::constants::TILE_HEIGHT, tt::constants::TILE_WIDTH));
         distributed::EnqueueWriteMeshBuffer(
@@ -417,7 +439,7 @@ int main() {
 
         fmt::print("Enviando programa para o device\n");
         workload.add_program(device_range, std::move(program));
-        distributed::EnqueueMeshWorkload(cq, workload, false);
+        distributed::EnqueueMeshWorkload(cq, workload, true);
         distributed::Finish(cq);
 
         std::vector<bfloat16> result_vec_tilized;
@@ -433,7 +455,7 @@ int main() {
         }
 
         std::vector<bfloat16> result_vec =
-            untilize_nfaces(result_vec_tilized, tt::constants::TILE_HEIGHT*height, tt::constants::TILE_WIDTH*width);
+            untilize_nfaces(result_vec_tilized, tt::constants::TILE_HEIGHT * height, tt::constants::TILE_WIDTH * width);
 
         mesh_device->close();
 

@@ -36,12 +36,7 @@ def jacobi(p0):
     if MODE == "tenstorrent":
         print("running tenstorrent")
         cmd = ["bash", exec_path]
-
-        with subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, text=True,
-                              bufsize=1) as processo:
-            for linha in processo.stdout:
-                print(linha, end='', flush=True)
+        subprocess.run(cmd, check=True)
 
         return read_from_file("output.bin", p0.shape)
     if MODE == "python":
@@ -58,10 +53,10 @@ def jacobi(p0):
 
 
 # Grid parameters
-nx = 64                  # largura (colunas)
-ny = 32                  # altura (linhas)
-xmin, xmax = 0.0, 64.0    # Aumentei o domínio X para manter a proporção da malha
-ymin, ymax = 0.0, 32.0    # Ajustei Y para começar do 0 (mais intuitivo)
+nx = 128                  # largura (colunas)
+ny = 128                  # altura (linhas)
+xmin, xmax = 0.0, nx    # Aumentei o domínio X para manter a proporção da malha
+ymin, ymax = 0.0, ny    # Ajustei Y para começar do 0 (mais intuitivo)
 lx = xmax - xmin
 ly = ymax - ymin
 dx = lx / (nx-1)
@@ -76,8 +71,8 @@ X, Y = np.meshgrid(x, y, indexing='xy')
 p0 = np.zeros((ny, nx), dtype=np.float32)
 
 # Definindo o quadrado centralizado dinamicamente
-tamanho_quadrado_x = 20  # Mais largo pois a matriz é mais larga
-tamanho_quadrado_y = 10
+tamanho_quadrado_x = 50  # Mais largo pois a matriz é mais larga
+tamanho_quadrado_y = 50
 
 centro_y, centro_x = ny // 2, nx // 2
 
