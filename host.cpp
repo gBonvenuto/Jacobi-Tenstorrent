@@ -143,8 +143,7 @@ int main() {
             .size = dram_LU_buffer_size,
         };
 
-        auto dram_buffer_A = distributed::MeshBuffer::create(dram_input_buffer_config, dram_config, mesh_device.get());
-        auto dram_buffer_B = distributed::MeshBuffer::create(dram_input_buffer_config, dram_config, mesh_device.get());
+        auto dram_buffer = distributed::MeshBuffer::create(dram_input_buffer_config, dram_config, mesh_device.get());
 
         auto L_dram_buffer = distributed::MeshBuffer::create(dram_LU_buffer_config, dram_config, mesh_device.get());
         auto U_dram_buffer = distributed::MeshBuffer::create(dram_LU_buffer_config, dram_config, mesh_device.get());
@@ -324,8 +323,7 @@ int main() {
         // INFO: Programando os worker cores
         fmt::print("Criando o kernel dos worker cores\n");
         std::vector<uint32_t> reader_compile_time_args;
-        TensorAccessorArgs(*dram_buffer_A).append_to(reader_compile_time_args);
-        TensorAccessorArgs(*dram_buffer_B).append_to(reader_compile_time_args);
+        TensorAccessorArgs(*dram_buffer).append_to(reader_compile_time_args);
         TensorAccessorArgs(*L_dram_buffer).append_to(reader_compile_time_args);
         TensorAccessorArgs(*U_dram_buffer).append_to(reader_compile_time_args);
         TensorAccessorArgs(*LL_dram_buffer).append_to(reader_compile_time_args);
@@ -340,8 +338,7 @@ int main() {
                 .compile_args = reader_compile_time_args});
 
         std::vector<uint32_t> writer_compile_time_args;
-        TensorAccessorArgs(*dram_buffer_A).append_to(writer_compile_time_args);
-        TensorAccessorArgs(*dram_buffer_B).append_to(writer_compile_time_args);
+        TensorAccessorArgs(*dram_buffer).append_to(writer_compile_time_args);
         auto writer = CreateKernel(
             program,
             OVERRIDE_KERNEL_PREFIX "Jacobi_Tenstorrent/kernels/worker/dataflow/write.cpp",
@@ -359,8 +356,7 @@ int main() {
                 .math_fidelity =
                     MathFidelity::HiFi4});  // There's different math fidelity modes (for the tensor engine)
 
-        uint32_t inA_addr = dram_buffer_A->address();
-        uint32_t inB_addr = dram_buffer_B->address();
+        uint32_t inA_addr = dram_buffer->address();
         uint32_t L_addr = L_dram_buffer->address();
         uint32_t U_addr = U_dram_buffer->address();
         uint32_t LL_addr = LL_dram_buffer->address();
@@ -426,7 +422,7 @@ int main() {
         fmt::print("Escrevendo os buffers na DRAM\n");
         distributed::EnqueueWriteMeshBuffer(
             cq,
-            dram_buffer_A,
+            dram_buffer,
             tilize_nfaces(in, tt::constants::TILE_HEIGHT * height, tt::constants::TILE_WIDTH * width));
         distributed::EnqueueWriteMeshBuffer(
             cq, L_dram_buffer, tilize_nfaces(L, tt::constants::TILE_HEIGHT, tt::constants::TILE_WIDTH));
@@ -446,13 +442,8 @@ int main() {
 
         // INFO: Se há um número par de iterações, então o resultado está no inA
         // mas se há um número ímpar de iterações, então o resultado está no inB
-        if (num_iterations % 2 == 0) {
-            fmt::print("Lendo resultado do bufer_A\n");
-            distributed::EnqueueReadMeshBuffer(cq, result_vec_tilized, dram_buffer_A, true);
-        } else {
-            fmt::print("Lendo resultado do bufer_B\n");
-            distributed::EnqueueReadMeshBuffer(cq, result_vec_tilized, dram_buffer_B, true);
-        }
+        fmt::print("Lendo resultado do bufer_A\n");
+        distributed::EnqueueReadMeshBuffer(cq, result_vec_tilized, dram_buffer, true);
 
         std::vector<bfloat16> result_vec =
             untilize_nfaces(result_vec_tilized, tt::constants::TILE_HEIGHT * height, tt::constants::TILE_WIDTH * width);
