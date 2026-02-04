@@ -79,7 +79,7 @@ void MAIN {
         // Utilizando a matriz L
         {
             if (i == 0) {
-                mm_init(cb_in, cb_LU, cb_tmp);
+                mm_init(cb_in, cb_LU, cb_out);
             } else {
                 mm_init_short(cb_in, cb_LU);
             }
@@ -147,9 +147,11 @@ void MAIN {
 
         // Então mandamos o resultado para o cb_out
         cb_reserve_back(cb_out, 1);
+        cb_reserve_back(cb_in, 1);
         pack_tile(dst_reg, cb_out);
-        pack_tile(dst_reg, cb_in); // Volta para o cb_in
+        pack_tile(dst_reg, cb_in);  // Volta para o cb_in
         cb_push_back(cb_out, 1);
+        cb_push_back(cb_in, 1);
 
         tile_regs_release();
         DPRINT_PACK(DPRINT << "Iteração " << i << " finalizada" << ENDL());

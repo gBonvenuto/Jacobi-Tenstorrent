@@ -25,6 +25,31 @@
 // programação (como o try-catch), então vou me esforçar para
 // utilizá-los quando eu encontrar a necessidade
 
+/** **Funcionamento do Programa**
+ *
+ * É recebida uma matriz quadrada por meio do arquivo input.bin no formato float
+ *
+ * Essa matriz é transformada em bfloat16 e tiliziada
+ *
+ * Em seguida atribuímos um Tensix para ser responsável por cada tile. Esse Tensix
+ * vai ler a sua tile na DRAM e vai enviá-la para seus vizinhos.
+ *
+ * E então começam as iterações, após cada iteração, os Tensix devem se comunicar
+ * para que haja a transferência de tiles entre eles.
+ *
+ * Após as iterações, os Tensix enviam as tiles pelas quais eram responsáveis
+ * de volta para a DRAM
+ *
+ * Espaço para melhorias:
+ * - Há 8 registradores que podem ser utilizados, e estamos utilizando apenas 1.
+ * - Há muita memória ainda que pode ser utilizada nos Tensix.
+ *
+ * Isso indica que podemos melhorar esse programa para ser capaz de processar
+ * matrizes 8 vezes maiores, com cada Tensix sendo responsável por 8 tiles em
+ * vez de 1
+ *
+ */
+
 using namespace tt::tt_metal;
 #ifndef OVERRIDE_KERNEL_PREFIX
 #define OVERRIDE_KERNEL_PREFIX ""
@@ -75,43 +100,76 @@ int main() {
         for (size_t i = 0; i < in_float.size(); ++i) {
             in[i] = bfloat16(in_float[i]);
         }
-        constexpr int device_id = 0;
-        std::shared_ptr<distributed::MeshDevice> mesh_device = distributed::MeshDevice::create_unit_mesh(device_id);
-
-        distributed::MeshCommandQueue& cq = mesh_device->mesh_command_queue();
-
-        // INFO: Core Range
         const double matrix_side_d = std::sqrt(static_cast<double>(in.size()));
         const uint32_t matrix_side = static_cast<uint32_t>(std::llround(matrix_side_d));
-        TT_FATAL(
-            static_cast<size_t>(matrix_side) * static_cast<size_t>(matrix_side) == in.size(),
-            "A matriz de entrada precisa ser quadrada ({} elementos)",
-            in.size());
+
         TT_FATAL(
             matrix_side % tt::constants::TILE_WIDTH == 0,
             "A dimensão {} não é múltiplo de {} (tamanho da tile)",
             matrix_side,
             tt::constants::TILE_WIDTH);
+
+        // Agora criamos também as matrizes de deslocamento L e U
+        //
+        // Se uma matriz A for multiplicada por uma dessas matrizes, ela será
+        // deslocada.
+        //
+        // Ex: L✕A = A_{movido para baixo}
+
+        fmt::print("Criando as matrizes auxiliares L, U, LL e UU\n");
+        constexpr uint32_t elements_per_tile = tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT;
+        std::vector<bfloat16> L(elements_per_tile, 0);
+        std::vector<bfloat16> U(elements_per_tile, 0);
+        std::vector<bfloat16> LL(elements_per_tile, 0);
+        std::vector<bfloat16> UU(elements_per_tile, 0);
+
+        // o L precisa ser preenchido com uns em baixo da diagonal
+        // e o U precisa ser preenchido com uns em cima da diagonal
+        //
+        // WARNING: não sei se isso tá correto
+        // Para acessar um valor [i,j] fazemos i*TILE_WIDTH+j
+        for (int idx = 0; idx < tt::constants::TILE_WIDTH - 1; idx++) {
+            {
+                int i = idx + 1;
+                int j = idx;
+                L[i * tt::constants::TILE_WIDTH + j] = bfloat16(1.0f);
+            }
+            {
+                int i = idx;
+                int j = idx + 1;
+                U[i * tt::constants::TILE_WIDTH + j] = bfloat16(1.0f);
+            }
+        }
+
+        // Para preencher o LL UU, precisamos apenas colocar um único
+        // um em uma das extremidades
+
+        // LL: Um único 1 na posição i = 31 e j=0
+        LL[31 * tt::constants::TILE_WIDTH + 0] = 1;
+
+        // UU: Um único 1 na posição i = 0 e j=31
+        UU[31] = 1;
+
+        // INFO: Core Range
         const uint32_t width = matrix_side / tt::constants::TILE_WIDTH;
         const uint32_t height = width;
-        constexpr CoreCoord core_controle = {0, 0};
-        constexpr CoreCoord core0 = {0, 1};
-        const CoreCoord core1 = {width - 1, height};
+
+        constexpr int device_id = 0;
+        std::shared_ptr<distributed::MeshDevice> mesh_device = distributed::MeshDevice::create_unit_mesh(device_id);
+
+        constexpr tt::tt_metal::CoreCoord core_begin = {0, 0};
+        const tt::tt_metal::CoreCoord core_end = {width - 1, height - 1};
         // const auto core0_physical_coord = mesh_device->worker_core_from_logical_core(core0);
         // const auto core1_physical_coord = mesh_device->worker_core_from_logical_core(core1);
 
-        tt::tt_metal::CoreRange worker_cores = tt::tt_metal::CoreRange(core0, core1);
-        tt::tt_metal::CoreRangeSet all_cores =
-            tt::tt_metal::CoreRangeSet(std::set{worker_cores, CoreRange(core_controle)});
+        tt::tt_metal::CoreRange all_cores = tt::tt_metal::CoreRange(core_begin, core_end);
 
-        tt::tt_metal::CoreCoord control_phys = mesh_device->worker_core_from_logical_core(core_controle);
-        tt::tt_metal::CoreCoord start_phys = mesh_device->worker_core_from_logical_core(worker_cores.start_coord);
-        tt::tt_metal::CoreCoord end_phys = mesh_device->worker_core_from_logical_core(worker_cores.end_coord);
+        // tt::tt_metal::CoreCoord start_phys = mesh_device->worker_core_from_logical_core(all_cores.start_coord);
+        // tt::tt_metal::CoreCoord end_phys = mesh_device->worker_core_from_logical_core(all_cores.end_coord);
 
         distributed::MeshWorkload workload;
         auto device_range = distributed::MeshCoordinateRange(mesh_device->shape());
 
-        constexpr uint32_t elements_per_tile = tt::constants::TILE_WIDTH * tt::constants::TILE_HEIGHT;
         const uint32_t num_tiles = in.size() / elements_per_tile;
         constexpr uint32_t tile_size_bytes = sizeof(bfloat16) * elements_per_tile;
         const uint32_t dram_input_buffer_size = tile_size_bytes * num_tiles;
@@ -150,46 +208,6 @@ int main() {
         auto LL_dram_buffer = distributed::MeshBuffer::create(dram_LU_buffer_config, dram_config, mesh_device.get());
         auto UU_dram_buffer = distributed::MeshBuffer::create(dram_LU_buffer_config, dram_config, mesh_device.get());
 
-        // Agora criamos também as matrizes de deslocamento L e U
-        //
-        // Se uma matriz A for multiplicada por uma dessas matrizes, ela será
-        // deslocada.
-        //
-        // Ex: L✕A = A_{movido para baixo}
-
-        fmt::print("Criando as matrizes auxiliares L, U, LL e UU\n");
-        std::vector<bfloat16> L(elements_per_tile, 0);
-        std::vector<bfloat16> U(elements_per_tile, 0);
-        std::vector<bfloat16> LL(elements_per_tile, 0);
-        std::vector<bfloat16> UU(elements_per_tile, 0);
-
-        // o L precisa ser preenchido com uns em baixo da diagonal
-        // e o U precisa ser preenchido com uns em cima da diagonal
-        //
-        // WARNING: não sei se isso tá correto
-        // Para acessar um valor [i,j] fazemos i*TILE_WIDTH+j
-        for (int idx = 0; idx < tt::constants::TILE_WIDTH - 1; idx++) {
-            {
-                int i = idx + 1;
-                int j = idx;
-                L[i * tt::constants::TILE_WIDTH + j] = bfloat16(1.0f);
-            }
-            {
-                int i = idx;
-                int j = idx + 1;
-                U[i * tt::constants::TILE_WIDTH + j] = bfloat16(1.0f);
-            }
-        }
-
-        // Para preencher o LL UU, precisamos apenas colocar um único
-        // um em uma das extremidades
-
-        // LL: Um único 1 na posição i = 31 e j=0
-        LL[31 * tt::constants::TILE_WIDTH + 0] = 1;
-
-        // UU: Um único 1 na posição i = 0 e j=31
-        UU[31] = 1;
-
         Program program = CreateProgram();
 
         // INFO: Circular Buffers
@@ -198,8 +216,8 @@ int main() {
         tt::CBIndex cb_in = tt::CBIndex::c_0;
         CreateCircularBuffer(
             program,
-            worker_cores,
-            CircularBufferConfig(2 * tile_size_bytes, {{cb_in, tt::DataFormat::Float16_b}})
+            all_cores,
+            CircularBufferConfig(tile_size_bytes, {{cb_in, tt::DataFormat::Float16_b}})
                 .set_page_size(cb_in, tile_size_bytes));
 
         // L e U são as matrizes de deslocamento
@@ -208,7 +226,7 @@ int main() {
         tt::CBIndex cb_LU = tt::CBIndex::c_1;
         CreateCircularBuffer(
             program,
-            worker_cores,
+            all_cores,
             CircularBufferConfig(2 * tile_size_bytes, {{cb_LU, tt::DataFormat::Float16_b}})
                 .set_page_size(cb_LU, tile_size_bytes));
 
@@ -217,112 +235,82 @@ int main() {
         tt::CBIndex cb_LLUU = tt::CBIndex::c_2;
         CreateCircularBuffer(
             program,
-            worker_cores,
+            all_cores,
             CircularBufferConfig(2 * tile_size_bytes, {{cb_LLUU, tt::DataFormat::Float16_b}})
                 .set_page_size(cb_LLUU, tile_size_bytes));
 
         tt::CBIndex cb_vizinho_cima = tt::CBIndex::c_3;
         CreateCircularBuffer(
             program,
-            worker_cores,
-            CircularBufferConfig(2 * tile_size_bytes, {{cb_vizinho_cima, tt::DataFormat::Float16_b}})
+            all_cores,
+            CircularBufferConfig(tile_size_bytes, {{cb_vizinho_cima, tt::DataFormat::Float16_b}})
                 .set_page_size(cb_vizinho_cima, tile_size_bytes));
 
         tt::CBIndex cb_vizinho_baixo = tt::CBIndex::c_4;
         CreateCircularBuffer(
             program,
-            worker_cores,
-            CircularBufferConfig(2 * tile_size_bytes, {{cb_vizinho_baixo, tt::DataFormat::Float16_b}})
+            all_cores,
+            CircularBufferConfig(tile_size_bytes, {{cb_vizinho_baixo, tt::DataFormat::Float16_b}})
                 .set_page_size(cb_vizinho_baixo, tile_size_bytes));
 
         tt::CBIndex cb_vizinho_esquerda = tt::CBIndex::c_5;
         CreateCircularBuffer(
             program,
-            worker_cores,
-            CircularBufferConfig(2 * tile_size_bytes, {{cb_vizinho_esquerda, tt::DataFormat::Float16_b}})
+            all_cores,
+            CircularBufferConfig(tile_size_bytes, {{cb_vizinho_esquerda, tt::DataFormat::Float16_b}})
                 .set_page_size(cb_vizinho_esquerda, tile_size_bytes));
 
         tt::CBIndex cb_vizinho_direita = tt::CBIndex::c_6;
         CreateCircularBuffer(
             program,
-            worker_cores,
-            CircularBufferConfig(2 * tile_size_bytes, {{cb_vizinho_direita, tt::DataFormat::Float16_b}})
+            all_cores,
+            CircularBufferConfig(tile_size_bytes, {{cb_vizinho_direita, tt::DataFormat::Float16_b}})
                 .set_page_size(cb_vizinho_direita, tile_size_bytes));
 
         tt::CBIndex cb_out = tt::CBIndex::c_16;
         CreateCircularBuffer(
             program,
-            worker_cores,
+            all_cores,
             CircularBufferConfig(2 * tile_size_bytes, {{cb_out, tt::DataFormat::Float16_b}})
                 .set_page_size(cb_out, tile_size_bytes));
-
-        tt::CBIndex cb_tmp = tt::CBIndex::c_17;
-        CreateCircularBuffer(
-            program,
-            worker_cores,
-            CircularBufferConfig(1 * tile_size_bytes, {{cb_tmp, tt::DataFormat::Float16_b}})
-                .set_page_size(cb_tmp, tile_size_bytes));
 
         // INFO: Semáforos
         fmt::print("Criando os semáforos\n");
 
         //
-        // **sem_id_computed**
+        // **semaphore_reader**
         //
         // -------------------
         //
-        // Ao ler, o Reader incrementa o valor do semáforo
-        // E o core de controle é resposável por monitorar esse semáforo,
-        // e ao atingir um determinado valor, o core de controle irá
-        // incrementar o semáforo de start de cada tensix
+        // Esse semáforo avisa os vizinhos de que o Tensix está pronto para
+        // receber as suas tiles
         //
-        // começamos com o valor num_workers para que o programa já comece
-        const uint32_t sem_id_computed = CreateSemaphore(program, core_controle, worker_cores.size());
+        const uint32_t semaphore_reader = CreateSemaphore(program, all_cores, 0);
 
-        // **sem_id_start**
+        //
+        // **semaphore_writer**
         //
         // -------------------
         //
-        // O Tensix de controle irá incrementar o semáforo de cada core
-        // para avisar que o trabalho deve ser feito.
-        // E o Tensix de trabalho irá setar a zero quando começar o trabalho
-        const uint32_t sem_id_start = CreateSemaphore(program, all_cores, 0);
+        // Esse semáforo avisa os vizinhos de que o Tensix enviou as sua tile
+        // para eles
+        //
+        const uint32_t semaphore_writer = CreateSemaphore(program, all_cores, 0);
 
-        // INFO: programando o core_controle
-
-        fmt::print("Criando o kernel de controle\n");
-        auto control = CreateKernel(
-            program,
-            OVERRIDE_KERNEL_PREFIX "Jacobi_Tenstorrent/kernels/controle/control.cpp",
-            core_controle,
-            DataMovementConfig{
-                .processor = DataMovementProcessor::RISCV_0,
-                .noc = NOC::RISCV_0_default,
-            });
-
+        // INFO: Programando os Cores
         fmt::print(
-            "Estamos lidando com {} woker cores, {}, {}\n",
-            worker_cores.size(),
-            worker_cores.start_coord.str(),
-            worker_cores.end_coord.str());
-        SetRuntimeArgs(
-            program,
-            control,
-            core_controle,
-            {
-                (uint32_t)worker_cores.size(),
-                num_iterations,
-                (uint32_t)start_phys.x,
-                (uint32_t)start_phys.y,
-                (uint32_t)end_phys.x,
-                (uint32_t)end_phys.y,
-                sem_id_start,
-                sem_id_computed,
-            });
+            "Programando {} cores, {}, {}\n", all_cores.size(), all_cores.start_coord.str(), all_cores.end_coord.str());
 
-        // INFO: Programando os worker cores
-        fmt::print("Criando o kernel dos worker cores\n");
-        std::vector<uint32_t> reader_compile_time_args;
+        std::vector<uint32_t> reader_compile_time_args = {
+            cb_in,
+            cb_out,
+            cb_LU,
+            cb_LLUU,
+            cb_vizinho_cima,
+            cb_vizinho_baixo,
+            cb_vizinho_esquerda,
+            cb_vizinho_direita,
+        };
         TensorAccessorArgs(*dram_buffer).append_to(reader_compile_time_args);
         TensorAccessorArgs(*L_dram_buffer).append_to(reader_compile_time_args);
         TensorAccessorArgs(*U_dram_buffer).append_to(reader_compile_time_args);
@@ -331,50 +319,70 @@ int main() {
         auto reader = CreateKernel(
             program,
             OVERRIDE_KERNEL_PREFIX "Jacobi_Tenstorrent/kernels/worker/dataflow/read.cpp",
-            worker_cores,
+            all_cores,
             DataMovementConfig{
                 .processor = DataMovementProcessor::RISCV_0,
                 .noc = NOC::RISCV_0_default,
                 .compile_args = reader_compile_time_args});
 
-        std::vector<uint32_t> writer_compile_time_args;
+        std::vector<uint32_t> writer_compile_time_args = {
+            cb_in,
+            cb_out,
+            cb_LU,
+            cb_LLUU,
+            cb_vizinho_cima,
+            cb_vizinho_baixo,
+            cb_vizinho_esquerda,
+            cb_vizinho_direita,
+        };
         TensorAccessorArgs(*dram_buffer).append_to(writer_compile_time_args);
         auto writer = CreateKernel(
             program,
             OVERRIDE_KERNEL_PREFIX "Jacobi_Tenstorrent/kernels/worker/dataflow/write.cpp",
-            worker_cores,
+            all_cores,
             DataMovementConfig{
                 .processor = DataMovementProcessor::RISCV_1,
                 .noc = NOC::RISCV_1_default,
                 .compile_args = writer_compile_time_args});
 
+        std::vector<uint32_t> compute_compile_time_args = {
+            cb_in,
+            cb_out,
+            cb_LU,
+            cb_LLUU,
+            cb_vizinho_cima,
+            cb_vizinho_baixo,
+            cb_vizinho_esquerda,
+            cb_vizinho_direita,
+        };
         auto compute = CreateKernel(
             program,
             OVERRIDE_KERNEL_PREFIX "Jacobi_Tenstorrent/kernels/worker/compute/compute.cpp",
-            worker_cores,
+            all_cores,
             ComputeConfig{
-                .math_fidelity =
-                    MathFidelity::HiFi4});  // There's different math fidelity modes (for the tensor engine)
+                .math_fidelity = MathFidelity::HiFi4,
+                .compile_args = compute_compile_time_args,
+            });
 
-        uint32_t inA_addr = dram_buffer->address();
+        uint32_t in_addr = dram_buffer->address();
         uint32_t L_addr = L_dram_buffer->address();
         uint32_t U_addr = U_dram_buffer->address();
         uint32_t LL_addr = LL_dram_buffer->address();
         uint32_t UU_addr = UU_dram_buffer->address();
 
-        for (const auto& core : corerange_to_cores(worker_cores)) {
-            const uint32_t logical_x = core.x - worker_cores.start_coord.x;
-            const uint32_t logical_y = core.y - worker_cores.start_coord.y;
+        for (const auto& core : corerange_to_cores(all_cores)) {
+            const uint32_t logical_x = core.x - all_cores.start_coord.x;  // BUG: será que aqui não era para ser físico?
+            const uint32_t logical_y = core.y - all_cores.start_coord.y;
             const uint32_t tile_offset = logical_y * width + logical_x;
 
             fmt::print("Criando RuntimeArgs para {} (tile_offset={})\n", core.str(), tile_offset);
+
             SetRuntimeArgs(
                 program,
                 reader,
                 core,
                 {
-                    inA_addr,
-                    inB_addr,
+                    in_addr,
                     tile_offset,
                     /* num_tiles =*/(uint32_t)1,
                     num_iterations,
@@ -382,7 +390,8 @@ int main() {
                     U_addr,
                     LL_addr,
                     UU_addr,
-                    sem_id_start,
+                    semaphore_reader,
+                    semaphore_writer,
                     logical_x,
                     logical_y,
                     width,
@@ -407,23 +416,25 @@ int main() {
                 writer,
                 core,
                 {
-                    inA_addr,
-                    inB_addr,
+                    in_addr,
                     tile_offset,
                     /*num_tiles =*/1,
                     num_iterations,
-                    sem_id_computed,
-                    control_phys.x,
-                    control_phys.y,
+                    semaphore_reader,
+                    semaphore_writer,
+                    logical_x,
+                    logical_y,
+                    width,
+                    height,
                 });
         }
 
         // E escrevemos todos eles na DRAM do device
         fmt::print("Escrevendo os buffers na DRAM\n");
+        distributed::MeshCommandQueue& cq = mesh_device->mesh_command_queue();
+
         distributed::EnqueueWriteMeshBuffer(
-            cq,
-            dram_buffer,
-            tilize_nfaces(in, tt::constants::TILE_HEIGHT * height, tt::constants::TILE_WIDTH * width));
+            cq, dram_buffer, tilize_nfaces(in, tt::constants::TILE_HEIGHT * height, tt::constants::TILE_WIDTH * width));
         distributed::EnqueueWriteMeshBuffer(
             cq, L_dram_buffer, tilize_nfaces(L, tt::constants::TILE_HEIGHT, tt::constants::TILE_WIDTH));
         distributed::EnqueueWriteMeshBuffer(
@@ -436,13 +447,14 @@ int main() {
         fmt::print("Enviando programa para o device\n");
         workload.add_program(device_range, std::move(program));
         distributed::EnqueueMeshWorkload(cq, workload, true);
+
+        // TODO: liberar memória no host enquanto esperamos o programa finalizar?
+
         distributed::Finish(cq);
 
         std::vector<bfloat16> result_vec_tilized;
 
-        // INFO: Se há um número par de iterações, então o resultado está no inA
-        // mas se há um número ímpar de iterações, então o resultado está no inB
-        fmt::print("Lendo resultado do bufer_A\n");
+        fmt::print("Lendo resultado do buffer\n");
         distributed::EnqueueReadMeshBuffer(cq, result_vec_tilized, dram_buffer, true);
 
         std::vector<bfloat16> result_vec =
@@ -470,6 +482,7 @@ int main() {
             "/home/gian/Documentos/Unicamp/GeoBench/Tenstorrent/tt-metal/tt_metal/programming_examples/"
             "Jacobi_Tenstorrent/output.bin",
             result_vec_float);
+
     } catch (const std::exception& e) {
         fmt::print(stderr, "Test failed with exception! what: {}\n", e.what());
         throw;

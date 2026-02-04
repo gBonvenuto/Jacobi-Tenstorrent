@@ -23,6 +23,8 @@
 // * semaphore_writer
 // * my_x
 // * my_y
+// * width
+// * height
 //
 // **Compiletime arguments**
 //
@@ -49,6 +51,9 @@ void kernel_main() {
 
     const uint32_t my_x = get_arg_val<uint32_t>(7);
     const uint32_t my_y = get_arg_val<uint32_t>(8);
+
+    const uint32_t width = get_arg_val<uint32_t>(13);
+    const uint32_t height = get_arg_val<uint32_t>(14);
 
     // Compiletime args
     constexpr uint32_t cb_in = get_compile_time_arg_val(0);

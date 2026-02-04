@@ -179,7 +179,7 @@ void kernel_main() {
             noc_semaphore_inc(semaforo_direita_noc, 1);
         }
 
-        noc_async_atomic_barrier(); // BUG: talvez essa não seja a barreira correta.
+        noc_async_full_barrier(); // BUG: talvez essa não seja a barreira correta.
                                     // Se o código não funcionar, tentar fazer um full_barrier
 
         // Esperamos os outros enviarem as tiles deles para nós
