@@ -31,3 +31,24 @@ Cada célula é calculada com base na média dos valores das celulas à direita,
     1. Criar uma versão com loops
     2. Criar uma versão que resolve utilizando convolução
 4. Criar uma versão multi-core
+
+# Como executar
+
+```bash
+cmake -S . -B build_Debug -DCMAKE_BUILD_TYPE=Debug
+cmake --build build_Debug --target jacobi
+```
+
+O binário `jacobi` aceita os parâmetros:
+
+```
+jacobi <iterações> <input.bin> <output.bin>
+```
+
+- `iterações`: número de aplicações do método de Jacobi (padrão = 1)
+- `input.bin`: caminho para a matriz quadrada já flatten em `float32`
+- `output.bin`: arquivo de saída em `float32`
+
+O script `golden.py` gera um `input.bin` sintético e chama `run_script.sh`.
+O host agora usa caminhos relativos, então basta rodar o script no diretório do exemplo
+para utilizar os arquivos padrão `input.bin`/`output.bin`.

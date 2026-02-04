@@ -25,6 +25,8 @@
 // * my_y
 // * width
 // * height
+// * phys_x
+// * phys_y
 //
 // **Compiletime arguments**
 //
@@ -39,21 +41,23 @@
 // * inA TensorAccessorArgs
 void kernel_main() {
     const uint32_t in_addr = get_arg_val<uint32_t>(0);
-    const uint32_t tile_offset = get_arg_val<uint32_t>(2);
-    const uint32_t n_tiles = get_arg_val<uint32_t>(3);
-    const uint32_t n_iterations = get_arg_val<uint32_t>(4);
+    const uint32_t tile_offset = get_arg_val<uint32_t>(1);
+    const uint32_t n_tiles = get_arg_val<uint32_t>(2);
+    const uint32_t n_iterations = get_arg_val<uint32_t>(3);
 
-    const auto semaphore_reader = get_semaphore(get_arg_val<uint32_t>(5));
+    const auto semaphore_reader = get_semaphore(get_arg_val<uint32_t>(4));
     const auto semaphore_reader_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_reader);
 
-    const auto semaphore_writer = get_semaphore(get_arg_val<uint32_t>(6));
+    const auto semaphore_writer = get_semaphore(get_arg_val<uint32_t>(5));
     const auto semaphore_writer_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_writer);
 
-    const uint32_t my_x = get_arg_val<uint32_t>(7);
-    const uint32_t my_y = get_arg_val<uint32_t>(8);
+    const uint32_t my_x = get_arg_val<uint32_t>(6);
+    const uint32_t my_y = get_arg_val<uint32_t>(7);
 
-    const uint32_t width = get_arg_val<uint32_t>(13);
-    const uint32_t height = get_arg_val<uint32_t>(14);
+    const uint32_t width = get_arg_val<uint32_t>(8);
+    const uint32_t height = get_arg_val<uint32_t>(9);
+    const uint32_t phys_x = get_arg_val<uint32_t>(10);
+    const uint32_t phys_y = get_arg_val<uint32_t>(11);
 
     // Compiletime args
     constexpr uint32_t cb_in = get_compile_time_arg_val(0);
@@ -78,27 +82,20 @@ void kernel_main() {
 
     const int quantidade_vizinhos = has_left + has_right + has_top + has_bottom;
 
-    const auto semaforo_cima_noc = (has_top) ? get_noc_addr(my_x, my_y - 1, semaphore_writer) : 0;
-    const auto semaforo_baixo_noc = (has_bottom) ? get_noc_addr(my_x, my_y + 1, semaphore_writer) : 0;
-    const auto semaforo_esquerda_noc = (has_left) ? get_noc_addr(my_x - 1, my_y, semaphore_writer) : 0;
-    const auto semaforo_direita_noc = (has_right) ? get_noc_addr(my_x + 1, my_y, semaphore_writer) : 0;
+    const auto semaforo_cima_noc = (has_top) ? get_noc_addr(phys_x, phys_y - 1, semaphore_writer) : 0;
+    const auto semaforo_baixo_noc = (has_bottom) ? get_noc_addr(phys_x, phys_y + 1, semaphore_writer) : 0;
+    const auto semaforo_esquerda_noc = (has_left) ? get_noc_addr(phys_y - 1, phys_y, semaphore_writer) : 0;
+    const auto semaforo_direita_noc = (has_right) ? get_noc_addr(phys_x + 1, phys_y, semaphore_writer) : 0;
 
-
-    // TODO: incluir na apresentação sobre a diferença do
-    // read ptr e o write ptr.
-    // Read ptr: o resultado do reserve back
-    // Write ptr: o resultado do wait_front
-    const auto cb_out_ptr = get_write_ptr(cb_out);
-   
     const auto cb_top_ptr = get_read_ptr(cb_top);
     const auto cb_bottom_ptr = get_read_ptr(cb_bottom);
     const auto cb_left_ptr = get_read_ptr(cb_left);
     const auto cb_right_ptr = get_read_ptr(cb_right);
 
-    const uint64_t top_core_noc_addr = get_noc_addr(my_x, my_y-1, cb_bottom_ptr);
-    const uint64_t bottom_core_noc_addr = get_noc_addr(my_x, my_y-1, cb_top_ptr);
-    const uint64_t left_core_noc_addr = get_noc_addr(my_x, my_y-1, cb_right_ptr);
-    const uint64_t right_core_noc_addr = get_noc_addr(my_x, my_y-1, cb_left_ptr);
+    const uint64_t top_core_noc_addr = has_top ? get_noc_addr(phys_x, phys_y - 1, cb_bottom_ptr) : 0;
+    const uint64_t bottom_core_noc_addr = has_bottom ? get_noc_addr(phys_x, phys_y + 1, cb_top_ptr) : 0;
+    const uint64_t left_core_noc_addr = has_left ? get_noc_addr(phys_x - 1, phys_y, cb_right_ptr) : 0;
+    const uint64_t right_core_noc_addr = has_right ? get_noc_addr(phys_x + 1, phys_y, cb_left_ptr) : 0;
 
     // WARNING: como temos que enviar a nossa tile para os vizinhos antes da primeira
     // iteração, talvez precisemos fazer n_iterations+1. Não acho que seja o caso, mas se houver
@@ -142,11 +139,15 @@ void kernel_main() {
             noc_semaphore_inc(semaforo_direita_noc, 1);
         }
 
-        noc_async_atomic_barrier(); // BUG: talvez essa não seja a barreira correta.
-                                    // Se o código não funcionar, tentar fazer um full_barrier
+        noc_async_full_barrier();  // BUG: talvez essa não seja a barreira correta.
+                                   // Se o código não funcionar, tentar fazer um full_barrier
 
-        cb_pop_front(cb_out, 1);
+        DPRINT << "Finalizada uma iteração do writer" << ENDL();
     }
 
-    // TODO: enviar para a DRAM
+    // Envia o último valor de volta para a DRAM
+    cb_wait_front(cb_out, 1);
+    noc_async_write_tile(tile_offset, in, get_read_ptr(cb_out));
+    noc_async_write_barrier();
+    cb_pop_front(cb_out, 1);
 }

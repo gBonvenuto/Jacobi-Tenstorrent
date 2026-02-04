@@ -2,7 +2,12 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <filesystem>
 #include <fstream>
+#include <limits>
+#include <string>
+#include <utility>
+#include <vector>
 #include <tt-metalium/host_api.hpp>
 #include <tt-metalium/device.hpp>
 #include <tt-metalium/distributed.hpp>
@@ -57,8 +62,9 @@ using namespace tt::tt_metal;
 
 // Retorna uma matriz após ler um arquivo
 // WARNING: assume que a matriz é quadrada
-std::vector<float> read_matrix_from_file(const std::string& filename) {
+std::vector<float> read_matrix_from_file(const std::filesystem::path& filename) {
     std::ifstream file(filename, std::ios::binary);
+    TT_FATAL(file.good(), "Não foi possível abrir {}", filename.string());
     file.seekg(0, std::ios::end);
     size_t size = file.tellg();
     file.seekg(0, std::ios::beg);
@@ -74,24 +80,27 @@ std::vector<float> read_matrix_from_file(const std::string& filename) {
 }
 
 // Escreve uma matriz em um arquivo
-void write_matrix_to_file(const std::string& filename, const std::vector<float>& data) {
+void write_matrix_to_file(const std::filesystem::path& filename, const std::vector<float>& data) {
     std::ofstream file(filename, std::ios::binary);
+    TT_FATAL(file.good(), "Não foi possível abrir {} para escrita", filename.string());
     size_t size = data.size() * sizeof(float);
     file.write(reinterpret_cast<const char*>(data.data()), size);
 }
 
-int main() {
-    uint32_t num_iterations;
-    printf("Quantas iterações: ");
-    scanf("%d", &num_iterations);
+int main(int argc, char** argv) {
+    uint32_t num_iterations = 1;
+    if (argc > 1) {
+        num_iterations = static_cast<uint32_t>(std::stoul(argv[1]));
+    }
+    const std::filesystem::path input_path = (argc > 2) ? argv[2] : std::filesystem::path("input.bin");
+    const std::filesystem::path output_path = (argc > 3) ? argv[3] : std::filesystem::path("output.bin");
     // bool pass = true;
     try {
         // INFO: Buffers
 
-        fmt::print("lendo input.bin\n");
-        std::vector<float> in_float = read_matrix_from_file(
-            "/home/gian/Documentos/Unicamp/GeoBench/Tenstorrent/tt-metal/tt_metal/programming_examples/"
-            "Jacobi_Tenstorrent/input.bin");
+        fmt::print("Iterações: {}\n", num_iterations);
+        fmt::print("Lendo {}\n", input_path.string());
+        std::vector<float> in_float = read_matrix_from_file(input_path);
 
         std::vector<bfloat16> in(in_float.size());
 
@@ -371,7 +380,8 @@ int main() {
         uint32_t UU_addr = UU_dram_buffer->address();
 
         for (const auto& core : corerange_to_cores(all_cores)) {
-            const uint32_t logical_x = core.x - all_cores.start_coord.x;  // BUG: será que aqui não era para ser físico?
+            const auto physical_core = mesh_device->worker_core_from_logical_core(core);
+            const uint32_t logical_x = core.x - all_cores.start_coord.x;
             const uint32_t logical_y = core.y - all_cores.start_coord.y;
             const uint32_t tile_offset = logical_y * width + logical_x;
 
@@ -396,6 +406,8 @@ int main() {
                     logical_y,
                     width,
                     height,
+                    static_cast<uint32_t>(physical_core.x),
+                    static_cast<uint32_t>(physical_core.y),
                 });
 
             SetRuntimeArgs(
@@ -409,6 +421,8 @@ int main() {
                     logical_y,
                     width,
                     height,
+                    static_cast<uint32_t>(physical_core.x),
+                    static_cast<uint32_t>(physical_core.y),
                 });
 
             SetRuntimeArgs(
@@ -477,11 +491,8 @@ int main() {
         //     }
         // }
 
-        fmt::print("Escrevendo em output.bin\n");
-        write_matrix_to_file(
-            "/home/gian/Documentos/Unicamp/GeoBench/Tenstorrent/tt-metal/tt_metal/programming_examples/"
-            "Jacobi_Tenstorrent/output.bin",
-            result_vec_float);
+        fmt::print("Escrevendo em {}\n", output_path.string());
+        write_matrix_to_file(output_path, result_vec_float);
 
     } catch (const std::exception& e) {
         fmt::print(stderr, "Test failed with exception! what: {}\n", e.what());

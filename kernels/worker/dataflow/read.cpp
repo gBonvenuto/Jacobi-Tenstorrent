@@ -32,6 +32,8 @@
 // * my_y           // relativo ao start_coord
 // * width
 // * height
+// * phys_x
+// * phys_y
 //
 // **Compiletime arguments**
 //
@@ -50,26 +52,28 @@
 void kernel_main() {
     DPRINT << "inicializando Reader" << ENDL();
     const uint32_t in_addr = get_arg_val<uint32_t>(0);
-    const uint32_t tile_offset = get_arg_val<uint32_t>(2);
+    const uint32_t tile_offset = get_arg_val<uint32_t>(1);
     // TODO: estamos sempre assumindo que será uma tile por core.
     // Se isso mudar, precisamos mudar o código
-    const uint32_t n_tiles = get_arg_val<uint32_t>(3);
-    const uint32_t n_iterations = get_arg_val<uint32_t>(4);
-    const uint32_t L_dram_addr = get_arg_val<uint32_t>(5);
-    const uint32_t U_dram_addr = get_arg_val<uint32_t>(6);
-    const uint32_t LL_dram_addr = get_arg_val<uint32_t>(7);
-    const uint32_t UU_dram_addr = get_arg_val<uint32_t>(8);
+    const uint32_t n_tiles = get_arg_val<uint32_t>(2);
+    const uint32_t n_iterations = get_arg_val<uint32_t>(3);
+    const uint32_t L_dram_addr = get_arg_val<uint32_t>(4);
+    const uint32_t U_dram_addr = get_arg_val<uint32_t>(5);
+    const uint32_t LL_dram_addr = get_arg_val<uint32_t>(6);
+    const uint32_t UU_dram_addr = get_arg_val<uint32_t>(7);
 
-    const auto semaphore_reader = get_semaphore(get_arg_val<uint32_t>(9));
+    const auto semaphore_reader = get_semaphore(get_arg_val<uint32_t>(8));
     const auto semaphore_reader_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_reader);
 
-    const auto semaphore_writer = get_semaphore(get_arg_val<uint32_t>(10));
+    const auto semaphore_writer = get_semaphore(get_arg_val<uint32_t>(9));
     const auto semaphore_writer_ptr = reinterpret_cast<volatile tt_l1_ptr uint32_t*>(semaphore_writer);
 
-    uint32_t my_x = get_arg_val<uint32_t>(11);
-    const uint32_t my_y = get_arg_val<uint32_t>(12);
-    const uint32_t width = get_arg_val<uint32_t>(13);
-    const uint32_t height = get_arg_val<uint32_t>(14);
+    const uint32_t my_x = get_arg_val<uint32_t>(10);
+    const uint32_t my_y = get_arg_val<uint32_t>(11);
+    const uint32_t width = get_arg_val<uint32_t>(12);
+    const uint32_t height = get_arg_val<uint32_t>(13);
+    const uint32_t phys_x = get_arg_val<uint32_t>(14);
+    const uint32_t phys_y = get_arg_val<uint32_t>(15);
 
     const bool has_left = (my_x > 0);
     const bool has_right = (my_x < width - 1);
@@ -79,10 +83,11 @@ void kernel_main() {
     const int quantidade_vizinhos = has_left + has_right + has_top + has_bottom;
 
     DPRINT << "my_x: " << my_x << ", my_y: " << my_y << ENDL();
+    DPRINT << "phys_x: " << phys_x << ", phys_y: " << phys_y << ENDL();
     DPRINT << "width: " << width << ", height: " << height << ENDL();
     DPRINT << "has_left: " << (int)has_left << ", has_right: " << (int)has_right << ", has_top: " << (int)has_top
            << ", has_bottom: " << (int)has_bottom << ENDL();
-
+    DPRINT << "quantidade vizinhos: " << quantidade_vizinhos << ENDL();
 
     // Compiletime args
     constexpr uint32_t cb_in = get_compile_time_arg_val(0);
@@ -151,10 +156,10 @@ void kernel_main() {
 
     noc_async_read_barrier();
 
-    const auto semaforo_cima_noc = (has_top) ? get_noc_addr(my_x, my_y - 1, semaphore_reader) : 0;
-    const auto semaforo_baixo_noc = (has_bottom) ? get_noc_addr(my_x, my_y + 1, semaphore_reader) : 0;
-    const auto semaforo_esquerda_noc = (has_left) ? get_noc_addr(my_x - 1, my_y, semaphore_reader) : 0;
-    const auto semaforo_direita_noc = (has_right) ? get_noc_addr(my_x + 1, my_y, semaphore_reader) : 0;
+    const auto semaforo_cima_noc = (has_top) ? get_noc_addr(phys_x, phys_y-1, semaphore_reader) : 0;
+    const auto semaforo_baixo_noc = (has_bottom) ? get_noc_addr(phys_x, phys_y+1, semaphore_reader) : 0;
+    const auto semaforo_esquerda_noc = (has_left) ? get_noc_addr(phys_x-1, phys_y, semaphore_reader) : 0;
+    const auto semaforo_direita_noc = (has_right) ? get_noc_addr(phys_x+1, phys_y, semaphore_reader) : 0;
 
     for (uint32_t i = 0; i < n_iterations; i++) {
         DPRINT << "começando uma iteração" << ENDL();
@@ -179,12 +184,13 @@ void kernel_main() {
             noc_semaphore_inc(semaforo_direita_noc, 1);
         }
 
-        noc_async_full_barrier(); // BUG: talvez essa não seja a barreira correta.
-                                    // Se o código não funcionar, tentar fazer um full_barrier
+        noc_async_full_barrier();  // BUG: talvez essa não seja a barreira correta.
+                                   // Se o código não funcionar, tentar fazer um full_barrier
 
         // Esperamos os outros enviarem as tiles deles para nós
         DPRINT << "Recebendo tiles vizinhas" << ENDL();
         noc_semaphore_wait(semaphore_writer_ptr, quantidade_vizinhos * (i + 1));
+        DPRINT << "Tiles vizinhas recebidas" << ENDL();
 
         // Agora que recebemos as tiles dos vizinhos, vamos dar um push_back
         // nos cbs
