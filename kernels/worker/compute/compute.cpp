@@ -16,6 +16,17 @@
 // * my_y
 // * width
 // * height
+//
+// ** Compiletime arguments**
+//
+// * cb_in index
+// * cb_out index
+// * cb_LU index
+// * cb_LLUU index
+// * cb_top index
+// * cb_bottom index
+// * cb_left index
+// * cb_right index
 namespace NAMESPACE {
 void MAIN {
     const uint32_t n_tiles = get_arg_val<uint32_t>(0);
@@ -30,30 +41,29 @@ void MAIN {
     const bool has_top = (my_y > 0);
     const bool has_bottom = (my_y < height - 1);
 
-    constexpr uint32_t cb_in = tt::CBIndex::c_0;
+    // Compiletime args
+    constexpr uint32_t cb_in = get_compile_time_arg_val(0);
+    constexpr uint32_t cb_out = get_compile_time_arg_val(1);
     // L primeiro, U depois
-    constexpr uint32_t cb_LU = tt::CBIndex::c_1;
+    constexpr uint32_t cb_LU = get_compile_time_arg_val(2);
     // LL primeiro, UU depois
-    constexpr uint32_t cb_LLUU = tt::CBIndex::c_2;
+    constexpr uint32_t cb_LLUU = get_compile_time_arg_val(3);
 
-    constexpr uint32_t cb_top = tt::CBIndex::c_3;
-    constexpr uint32_t cb_bottom = tt::CBIndex::c_4;
-    constexpr uint32_t cb_left = tt::CBIndex::c_5;
-    constexpr uint32_t cb_right = tt::CBIndex::c_6;
-
-    constexpr auto cb_out = tt::CBIndex::c_16;
-    constexpr auto cb_tmp = tt::CBIndex::c_17;
+    constexpr uint32_t cb_top = get_compile_time_arg_val(4);
+    constexpr uint32_t cb_bottom = get_compile_time_arg_val(5);
+    constexpr uint32_t cb_left = get_compile_time_arg_val(6);
+    constexpr uint32_t cb_right = get_compile_time_arg_val(7);
 
     constexpr uint32_t dst_reg = 0;
 
     // Esperamos todas as tiles estarem disponíveis
     cb_wait_front(cb_LU, 1);
     cb_wait_front(cb_LLUU, 1);
+    cb_wait_front(cb_in, 1);
     DPRINT_UNPACK(DPRINT << "Recebi as tiles auxiliares" << ENDL());
 
     for (uint32_t i = 0; i < n_iterations; i++) {
-        DPRINT_UNPACK(DPRINT << "Esperando as tiles de input e vizinhos" << ENDL());
-        cb_wait_front(cb_in, 1);
+        DPRINT_UNPACK(DPRINT << "Esperando as vizinhas" << ENDL());
         cb_wait_front(cb_left, 1);   // NOTE: esperamos eles mesmo que não
         cb_wait_front(cb_right, 1);  // precisemos deles porque o reader ainda
         cb_wait_front(cb_top, 1);    // os envia vazios.
@@ -138,6 +148,7 @@ void MAIN {
         // Então mandamos o resultado para o cb_out
         cb_reserve_back(cb_out, 1);
         pack_tile(dst_reg, cb_out);
+        pack_tile(dst_reg, cb_in); // Volta para o cb_in
         cb_push_back(cb_out, 1);
 
         tile_regs_release();
