@@ -149,6 +149,7 @@ void kernel_main() {
     noc_async_read_tile(tile_offset, in, get_write_ptr(cb_out));
 
     cb_push_back(cb_in, 1);
+    DPRINT << "Escrevendo no cb_out antes da primeira iteração" << ENDL();
     cb_push_back(cb_out, 1);  // Eviamos pro cb_out para podermos enviá-la para
                               // os vizinhos antes da primeira iteração.
                               // Nas iterações seguintes é o Compute quem
@@ -156,10 +157,10 @@ void kernel_main() {
 
     noc_async_read_barrier();
 
-    const auto semaforo_cima_noc = (has_top) ? get_noc_addr(phys_x, phys_y-1, semaphore_reader) : 0;
-    const auto semaforo_baixo_noc = (has_bottom) ? get_noc_addr(phys_x, phys_y+1, semaphore_reader) : 0;
-    const auto semaforo_esquerda_noc = (has_left) ? get_noc_addr(phys_x-1, phys_y, semaphore_reader) : 0;
-    const auto semaforo_direita_noc = (has_right) ? get_noc_addr(phys_x+1, phys_y, semaphore_reader) : 0;
+    const auto semaforo_cima_noc = (has_top) ? get_noc_addr(phys_x, phys_y - 1, semaphore_reader) : 0;
+    const auto semaforo_baixo_noc = (has_bottom) ? get_noc_addr(phys_x, phys_y + 1, semaphore_reader) : 0;
+    const auto semaforo_esquerda_noc = (has_left) ? get_noc_addr(phys_x - 1, phys_y, semaphore_reader) : 0;
+    const auto semaforo_direita_noc = (has_right) ? get_noc_addr(phys_x + 1, phys_y, semaphore_reader) : 0;
 
     for (uint32_t i = 0; i < n_iterations; i++) {
         DPRINT << "começando uma iteração" << ENDL();
@@ -185,9 +186,10 @@ void kernel_main() {
         }
 
         noc_async_full_barrier();  // BUG: talvez essa não seja a barreira correta.
-                                   // Se o código não funcionar, tentar fazer um full_barrier
+                                     // Se o código não funcionar, tentar fazer um full_barrier
 
         // Esperamos os outros enviarem as tiles deles para nós
+
         DPRINT << "Recebendo tiles vizinhas" << ENDL();
         noc_semaphore_wait(semaphore_writer_ptr, quantidade_vizinhos * (i + 1));
         DPRINT << "Tiles vizinhas recebidas" << ENDL();

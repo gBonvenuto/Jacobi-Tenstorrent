@@ -30,10 +30,7 @@
 //
 // **Compiletime arguments**
 //
-// * cb_in // TODO: remove
 // * cb_out
-// * cb_LU // TODO: remove
-// * cb_LLUU // TODO: remove
 // * cb_top
 // * cb_bottom
 // * cb_left
@@ -60,19 +57,16 @@ void kernel_main() {
     const uint32_t phys_y = get_arg_val<uint32_t>(11);
 
     // Compiletime args
-    constexpr uint32_t cb_in = get_compile_time_arg_val(0);
-    constexpr uint32_t cb_out = get_compile_time_arg_val(1);
-    constexpr uint32_t cb_LU = get_compile_time_arg_val(2);
-    constexpr uint32_t cb_LLUU = get_compile_time_arg_val(3);
+    constexpr uint32_t cb_out = get_compile_time_arg_val(0);
 
-    constexpr uint32_t cb_top = get_compile_time_arg_val(4);
-    constexpr uint32_t cb_bottom = get_compile_time_arg_val(5);
-    constexpr uint32_t cb_left = get_compile_time_arg_val(6);
-    constexpr uint32_t cb_right = get_compile_time_arg_val(7);
+    constexpr uint32_t cb_top = get_compile_time_arg_val(1);
+    constexpr uint32_t cb_bottom = get_compile_time_arg_val(2);
+    constexpr uint32_t cb_left = get_compile_time_arg_val(3);
+    constexpr uint32_t cb_right = get_compile_time_arg_val(4);
 
     const uint32_t tile_size_bytes = get_tile_size(cb_out);
 
-    constexpr auto in_args = TensorAccessorArgs<8>();
+    constexpr auto in_args = TensorAccessorArgs<5>();
     const auto in = TensorAccessor(in_args, in_addr, tile_size_bytes);
 
     const bool has_left = (my_x > 0);
@@ -84,18 +78,19 @@ void kernel_main() {
 
     const auto semaforo_cima_noc = (has_top) ? get_noc_addr(phys_x, phys_y - 1, semaphore_writer) : 0;
     const auto semaforo_baixo_noc = (has_bottom) ? get_noc_addr(phys_x, phys_y + 1, semaphore_writer) : 0;
-    const auto semaforo_esquerda_noc = (has_left) ? get_noc_addr(phys_y - 1, phys_y, semaphore_writer) : 0;
+    const auto semaforo_esquerda_noc = (has_left) ? get_noc_addr(phys_x - 1, phys_y, semaphore_writer) : 0;
     const auto semaforo_direita_noc = (has_right) ? get_noc_addr(phys_x + 1, phys_y, semaphore_writer) : 0;
 
+    const auto cb_out_ptr = get_write_ptr(cb_out);
     const auto cb_top_ptr = get_read_ptr(cb_top);
     const auto cb_bottom_ptr = get_read_ptr(cb_bottom);
     const auto cb_left_ptr = get_read_ptr(cb_left);
     const auto cb_right_ptr = get_read_ptr(cb_right);
 
-    const uint64_t top_core_noc_addr = has_top ? get_noc_addr(phys_x, phys_y - 1, cb_bottom_ptr) : 0;
-    const uint64_t bottom_core_noc_addr = has_bottom ? get_noc_addr(phys_x, phys_y + 1, cb_top_ptr) : 0;
-    const uint64_t left_core_noc_addr = has_left ? get_noc_addr(phys_x - 1, phys_y, cb_right_ptr) : 0;
-    const uint64_t right_core_noc_addr = has_right ? get_noc_addr(phys_x + 1, phys_y, cb_left_ptr) : 0;
+    const uint64_t top_core_noc_addr = (has_top) ? get_noc_addr(phys_x, phys_y - 1, cb_bottom_ptr) : 0;
+    const uint64_t bottom_core_noc_addr = (has_bottom) ? get_noc_addr(phys_x, phys_y + 1, cb_top_ptr) : 0;
+    const uint64_t left_core_noc_addr = (has_left) ? get_noc_addr(phys_x - 1, phys_y, cb_right_ptr) : 0;
+    const uint64_t right_core_noc_addr = (has_right) ? get_noc_addr(phys_x + 1, phys_y, cb_left_ptr) : 0;
 
     // WARNING: como temos que enviar a nossa tile para os vizinhos antes da primeira
     // iteração, talvez precisemos fazer n_iterations+1. Não acho que seja o caso, mas se houver
@@ -110,16 +105,16 @@ void kernel_main() {
         DPRINT << "Enviando a tile para os vizinhos" << ENDL();
 
         if (has_top) {
-            noc_async_write(cb_out, top_core_noc_addr, tile_size_bytes);
+            noc_async_write(cb_out_ptr, top_core_noc_addr, tile_size_bytes);
         }
         if (has_bottom) {
-            noc_async_write(cb_out, bottom_core_noc_addr, tile_size_bytes);
+            noc_async_write(cb_out_ptr, bottom_core_noc_addr, tile_size_bytes);
         }
         if (has_left) {
-            noc_async_write(cb_out, left_core_noc_addr, tile_size_bytes);
+            noc_async_write(cb_out_ptr, left_core_noc_addr, tile_size_bytes);
         }
         if (has_right) {
-            noc_async_write(cb_out, right_core_noc_addr, tile_size_bytes);
+            noc_async_write(cb_out_ptr, right_core_noc_addr, tile_size_bytes);
         }
 
         noc_async_write_barrier();
@@ -127,15 +122,19 @@ void kernel_main() {
         DPRINT << "Avisando que as tiles foram enviadas" << ENDL();
 
         if (has_top) {
+            DPRINT << "Incrementando semáforo writer de cima" << ENDL();
             noc_semaphore_inc(semaforo_cima_noc, 1);
         }
         if (has_bottom) {
+            DPRINT << "Incrementando semáforo writer de baixo" << ENDL();
             noc_semaphore_inc(semaforo_baixo_noc, 1);
         }
         if (has_left) {
+            DPRINT << "Incrementando semáforo writer da esquerda" << ENDL();
             noc_semaphore_inc(semaforo_esquerda_noc, 1);
         }
         if (has_right) {
+            DPRINT << "Incrementando semáforo writer da direita" << ENDL();
             noc_semaphore_inc(semaforo_direita_noc, 1);
         }
 
@@ -146,8 +145,10 @@ void kernel_main() {
     }
 
     // Envia o último valor de volta para a DRAM
+    DPRINT << "Esperando o cb_out" << ENDL();
     cb_wait_front(cb_out, 1);
     noc_async_write_tile(tile_offset, in, get_read_ptr(cb_out));
     noc_async_write_barrier();
     cb_pop_front(cb_out, 1);
+    DPRINT << "Tile enviada para a DRAM" << ENDL();
 }

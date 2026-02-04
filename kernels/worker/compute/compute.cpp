@@ -57,8 +57,8 @@ void MAIN {
     constexpr uint32_t dst_reg = 0;
 
     // Esperamos todas as tiles estarem disponíveis
-    cb_wait_front(cb_LU, 1);
-    cb_wait_front(cb_LLUU, 1);
+    cb_wait_front(cb_LU, 2);
+    cb_wait_front(cb_LLUU, 2);
     cb_wait_front(cb_in, 1);
     DPRINT_UNPACK(DPRINT << "Recebi as tiles auxiliares" << ENDL());
 
@@ -99,42 +99,42 @@ void MAIN {
             matmul_tiles(cb_LU, cb_in, 1, 0, dst_reg);  // Matriz acima
         }
 
-        // filtrar o de cima e acumular no dst_reg
-        if (has_top) {
-            mm_init_short(cb_LLUU, cb_top);
+        // // filtrar o de cima e acumular no dst_reg
+        // if (has_top) {
+        //     mm_init_short(cb_LLUU, cb_top);
+        //
+        //     matmul_tiles(cb_LLUU, cb_top, 1, 0, dst_reg);
+        // }
 
-            matmul_tiles(cb_LLUU, cb_top, 1, 0, dst_reg);
-        }
+        // // filtrar o de baixo e acumular no dst_reg
+        // if (has_bottom) {
+        //     mm_init_short(cb_LLUU, cb_bottom);
+        //
+        //     matmul_tiles(cb_LLUU, cb_bottom, 0, 0, dst_reg);
+        // }
 
-        // filtrar o de baixo e acumular no dst_reg
-        if (has_bottom) {
-            mm_init_short(cb_LLUU, cb_bottom);
+        // // filtrar o da esquerda e acumular no dst_reg
+        // if (has_left) {
+        //     mm_init_short(cb_left, cb_LLUU);
+        //
+        //     matmul_tiles(cb_left, cb_LLUU, 0, 0, dst_reg);
+        // }
 
-            matmul_tiles(cb_LLUU, cb_bottom, 0, 0, dst_reg);
-        }
+        // // filtrar o da direita e acumular no dst_reg
+        // if (has_right) {
+        //     mm_init_short(cb_right, cb_LLUU);
+        //
+        //     matmul_tiles(cb_right, cb_LLUU, 0, 1, dst_reg);
+        // }
 
-        // filtrar o da esquerda e acumular no dst_reg
-        if (has_left) {
-            mm_init_short(cb_left, cb_LLUU);
-
-            matmul_tiles(cb_left, cb_LLUU, 0, 0, dst_reg);
-        }
-
-        // filtrar o da direita e acumular no dst_reg
-        if (has_right) {
-            mm_init_short(cb_right, cb_LLUU);
-
-            matmul_tiles(cb_right, cb_LLUU, 0, 1, dst_reg);
-        }
-
-        // Dividir o resultado por 4
-        {
-            DPRINT_MATH(DPRINT << "dividindo o acumulado por 4" << ENDL());
-            binop_with_scalar_tile_init();
-            // utilizei esse site para converter float para bfloat16
-            // https://flop.evanau.dev/brainfloat-converter
-            mul_unary_tile(dst_reg, 0x3e800000);  // multiplicar por 0.25
-        }
+        // // Dividir o resultado por 4
+        // {
+        //     DPRINT_MATH(DPRINT << "dividindo o acumulado por 4" << ENDL());
+        //     binop_with_scalar_tile_init();
+        //     // utilizei esse site para converter float para bfloat16
+        //     // https://flop.evanau.dev/brainfloat-converter
+        //     mul_unary_tile(dst_reg, 0x3e800000);  // multiplicar por 0.25
+        // }
 
         cb_pop_front(cb_in, 1);
         cb_pop_front(cb_top, 1);

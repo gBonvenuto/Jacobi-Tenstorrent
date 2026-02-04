@@ -16,7 +16,7 @@ sys.setrecursionlimit(2000)
 # Esse script serve para eu aprender a fazer um algoritmo simples de
 # Jacobi
 
-max_it = 1
+max_it = 2
 it = 0
 
 
@@ -33,6 +33,7 @@ def read_from_file(filename, shape):
 
 def jacobi(p0):
     global MODE
+    global max_it
     if MODE == "tenstorrent":
         print("running tenstorrent")
         cmd = ["bash", exec_path]
@@ -40,7 +41,6 @@ def jacobi(p0):
 
         return read_from_file("output.bin", p0.shape)
     if MODE == "python":
-        global max_it
         global it
         pnew = p0.copy()
         if it >= max_it:
@@ -71,8 +71,8 @@ X, Y = np.meshgrid(x, y, indexing='xy')
 p0 = np.zeros((ny, nx), dtype=np.float32)
 
 # Definindo o quadrado centralizado dinamicamente
-tamanho_quadrado_x = 50
-tamanho_quadrado_y = 50
+tamanho_quadrado_x = 64
+tamanho_quadrado_y = 64
 
 centro_y, centro_x = ny // 2, nx // 2
 

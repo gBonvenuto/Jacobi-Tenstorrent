@@ -335,10 +335,7 @@ int main(int argc, char** argv) {
                 .compile_args = reader_compile_time_args});
 
         std::vector<uint32_t> writer_compile_time_args = {
-            cb_in,
             cb_out,
-            cb_LU,
-            cb_LLUU,
             cb_vizinho_cima,
             cb_vizinho_baixo,
             cb_vizinho_esquerda,
@@ -421,8 +418,6 @@ int main(int argc, char** argv) {
                     logical_y,
                     width,
                     height,
-                    static_cast<uint32_t>(physical_core.x),
-                    static_cast<uint32_t>(physical_core.y),
                 });
 
             SetRuntimeArgs(
@@ -440,6 +435,8 @@ int main(int argc, char** argv) {
                     logical_y,
                     width,
                     height,
+                    static_cast<uint32_t>(physical_core.x),
+                    static_cast<uint32_t>(physical_core.y),
                 });
         }
 
