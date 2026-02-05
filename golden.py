@@ -8,16 +8,11 @@ exec_path = "./run_script.sh"
 # MODES:
 # - python
 # - tenstorrent
-MODE = "python"
-print("MODE:", MODE)
+MODE = "tenstorrent"
 
-sys.setrecursionlimit(2000)
+max_it = 200
 
-# Esse script serve para eu aprender a fazer um algoritmo simples de
-# Jacobi
-
-max_it = 20 
-
+print(f"Mode: {MODE}, max_iterations: {max_it}")
 
 def save_to_file(matrix, filename):
     # Flatten the matrix (row-major order, C-style) and save as raw float32 data.
@@ -35,7 +30,7 @@ def jacobi(p0):
     global max_it
     if MODE == "tenstorrent":
         print("running tenstorrent")
-        cmd = ["bash", exec_path]
+        cmd = ["bash", exec_path, f"{max_it}"]
         subprocess.run(cmd, check=True)
 
         return read_from_file("output.bin", p0.shape)
