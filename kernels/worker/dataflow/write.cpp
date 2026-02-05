@@ -96,7 +96,7 @@ void kernel_main() {
     // iteração, talvez precisemos fazer n_iterations+1. Não acho que seja o caso, mas se houver
     // um hang na última iteração, talvez seja isso
     for (uint32_t i = 0; i < n_iterations; i++) {
-        DPRINT << "Iniciando nova iteração" << ENDL();
+        DPRINT << "Writer: Iniciando iteração " << i << ENDL();
         cb_wait_front(cb_out, 1);
 
         DPRINT << "Esperando os vizinhos estarem prontos para receber" << ENDL();
@@ -141,7 +141,9 @@ void kernel_main() {
         noc_async_full_barrier();  // BUG: talvez essa não seja a barreira correta.
                                    // Se o código não funcionar, tentar fazer um full_barrier
 
-        DPRINT << "Finalizada uma iteração do writer" << ENDL();
+        cb_pop_front(cb_out, 1);
+        cb_pop_front(cb_out, 1);
+        DPRINT << "Writer: Iteração " << i << " finalizada" << ENDL();
     }
 
     // Envia o último valor de volta para a DRAM

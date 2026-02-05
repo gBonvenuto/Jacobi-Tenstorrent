@@ -163,7 +163,7 @@ void kernel_main() {
     const auto semaforo_direita_noc = (has_right) ? get_noc_addr(phys_x + 1, phys_y, semaphore_reader) : 0;
 
     for (uint32_t i = 0; i < n_iterations; i++) {
-        DPRINT << "começando uma iteração" << ENDL();
+        DPRINT << "Reader: começando iteração " << i << ENDL();
 
         // Preparamos espaço para os buffers
         cb_reserve_back(cb_left, 1);
@@ -186,7 +186,7 @@ void kernel_main() {
         }
 
         noc_async_full_barrier();  // BUG: talvez essa não seja a barreira correta.
-                                     // Se o código não funcionar, tentar fazer um full_barrier
+                                   // Se o código não funcionar, tentar fazer um full_barrier
 
         // Esperamos os outros enviarem as tiles deles para nós
 
@@ -200,6 +200,8 @@ void kernel_main() {
         cb_push_back(cb_right, 1);
         cb_push_back(cb_top, 1);
         cb_push_back(cb_bottom, 1);
+
+        DPRINT << "Reader: iteração " << i << " finalizada" << ENDL();
     }
 
     DPRINT << "todas as iterações foram finalizadas" << ENDL();

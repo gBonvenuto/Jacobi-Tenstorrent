@@ -2,6 +2,7 @@
 #include "compute_kernel_api/eltwise_unary/eltwise_unary.h"
 #include "compute_kernel_api/eltwise_unary/fill.h"
 #include "compute_kernel_api/eltwise_binary_sfpu.h"
+#include "compute_kernel_api/eltwise_binary.h"
 #include "compute_kernel_api/eltwise_unary/binop_with_scalar.h"
 #include "compute_kernel_api/common.h"
 #include "compute_kernel_api/tile_move_copy.h"
@@ -56,6 +57,8 @@ void MAIN {
 
     constexpr uint32_t dst_reg = 0;
 
+    mm_init(cb_in, cb_LU, cb_out);
+
     // Esperamos todas as tiles estarem disponíveis
     cb_wait_front(cb_LU, 2);
     cb_wait_front(cb_LLUU, 2);
@@ -63,28 +66,32 @@ void MAIN {
     DPRINT_UNPACK(DPRINT << "Recebi as tiles auxiliares" << ENDL());
 
     for (uint32_t i = 0; i < n_iterations; i++) {
+        DPRINT_MATH(DPRINT << "MATH: Iniciando iteração " << i << ENDL());
         DPRINT_UNPACK(DPRINT << "Esperando as vizinhas" << ENDL());
-        cb_wait_front(cb_left, 1);   // NOTE: esperamos eles mesmo que não
-        cb_wait_front(cb_right, 1);  // precisemos deles porque o reader ainda
-        cb_wait_front(cb_top, 1);    // os envia vazios.
+
+        // NOTE: esperamos eles mesmo que não precisemos deles porque o reader
+        // ainda os envia vazios.
+        cb_wait_front(cb_left, 1);
+        cb_wait_front(cb_right, 1);
+        cb_wait_front(cb_top, 1);
         cb_wait_front(cb_bottom, 1);
+
         tile_regs_acquire();
 
         // Limpar registrador antes de usar
         {
+            MATH(DPRINT << "limpando registradores" << ENDL(););
             fill_tile_init();
             fill_tile_int(dst_reg, 0);
         }
 
         // Utilizando a matriz L
         {
-            if (i == 0) {
-                mm_init(cb_in, cb_LU, cb_out);
-            } else {
-                mm_init_short(cb_in, cb_LU);
-            }
+            DPRINT_MATH(DPRINT << "Shift L" << ENDL(););
+            mm_init_short(cb_in, cb_LU);
 
             matmul_tiles(cb_in, cb_LU, 0, 0, dst_reg);  // Matriz esquerda
+            DPRINT_MATH(DPRINT << "cheguei aqui" << ENDL(););
             // NOTE: quando é executada uma operação com
             // o mesmo registrador de destino, ele acumula,
             // não sobrescreve
@@ -93,49 +100,55 @@ void MAIN {
 
         // Utilizando a matriz U
         {
+            DPRINT_MATH(DPRINT << "Shift U" << ENDL(););
             mm_init_short(cb_LU, cb_in);
 
             matmul_tiles(cb_in, cb_LU, 0, 1, dst_reg);  // Matriz direita
             matmul_tiles(cb_LU, cb_in, 1, 0, dst_reg);  // Matriz acima
         }
 
-        // // filtrar o de cima e acumular no dst_reg
-        // if (has_top) {
-        //     mm_init_short(cb_LLUU, cb_top);
-        //
-        //     matmul_tiles(cb_LLUU, cb_top, 1, 0, dst_reg);
-        // }
+        // filtrar o de cima e acumular no dst_reg
+        if (has_top) {
+            DPRINT_MATH(DPRINT << "Top Halo" << ENDL(););
+            mm_init_short(cb_LLUU, cb_top);
 
-        // // filtrar o de baixo e acumular no dst_reg
-        // if (has_bottom) {
-        //     mm_init_short(cb_LLUU, cb_bottom);
-        //
-        //     matmul_tiles(cb_LLUU, cb_bottom, 0, 0, dst_reg);
-        // }
+            matmul_tiles(cb_LLUU, cb_top, 1, 0, dst_reg);
+        }
 
-        // // filtrar o da esquerda e acumular no dst_reg
-        // if (has_left) {
-        //     mm_init_short(cb_left, cb_LLUU);
-        //
-        //     matmul_tiles(cb_left, cb_LLUU, 0, 0, dst_reg);
-        // }
+        // filtrar o de baixo e acumular no dst_reg
+        if (has_bottom) {
+            DPRINT_MATH(DPRINT << "Bottom Halo" << ENDL(););
+            mm_init_short(cb_LLUU, cb_bottom);
 
-        // // filtrar o da direita e acumular no dst_reg
-        // if (has_right) {
-        //     mm_init_short(cb_right, cb_LLUU);
-        //
-        //     matmul_tiles(cb_right, cb_LLUU, 0, 1, dst_reg);
-        // }
+            matmul_tiles(cb_LLUU, cb_bottom, 0, 0, dst_reg);
+        }
 
-        // // Dividir o resultado por 4
-        // {
-        //     DPRINT_MATH(DPRINT << "dividindo o acumulado por 4" << ENDL());
-        //     binop_with_scalar_tile_init();
-        //     // utilizei esse site para converter float para bfloat16
-        //     // https://flop.evanau.dev/brainfloat-converter
-        //     mul_unary_tile(dst_reg, 0x3e800000);  // multiplicar por 0.25
-        // }
+        // filtrar o da esquerda e acumular no dst_reg
+        if (has_left) {
+            DPRINT_MATH(DPRINT << "Left Halo" << ENDL(););
+            mm_init_short(cb_left, cb_LLUU);
 
+            matmul_tiles(cb_left, cb_LLUU, 0, 0, dst_reg);
+        }
+
+        // filtrar o da direita e acumular no dst_reg
+        if (has_right) {
+            DPRINT_MATH(DPRINT << "Right Halo" << ENDL(););
+            mm_init_short(cb_right, cb_LLUU);
+
+            matmul_tiles(cb_right, cb_LLUU, 0, 1, dst_reg);
+        }
+
+        // Dividir o resultado por 4
+        {
+            DPRINT_MATH(DPRINT << "Dividindo por 4" << ENDL(););
+            binop_with_scalar_tile_init();
+            // utilizei esse site para converter float para bfloat16
+            // https://flop.evanau.dev/brainfloat-converter
+            mul_unary_tile(dst_reg, 0x3e800000);  // multiplicar por 0.25
+        }
+
+        DPRINT_MATH(DPRINT << "Popping CBs" << ENDL());
         cb_pop_front(cb_in, 1);
         cb_pop_front(cb_top, 1);
         cb_pop_front(cb_bottom, 1);
@@ -143,18 +156,22 @@ void MAIN {
         cb_pop_front(cb_right, 1);
 
         tile_regs_commit();
+
+
         tile_regs_wait();
 
-        // Então mandamos o resultado para o cb_out
         cb_reserve_back(cb_out, 1);
         cb_reserve_back(cb_in, 1);
+        // Então mandamos o resultado para o cb_out
         pack_tile(dst_reg, cb_out);
-        pack_tile(dst_reg, cb_in);  // Volta para o cb_in
+        pack_tile(dst_reg, cb_in);
+        DPRINT_PACK(DPRINT << "Enviando resultado para CB_out e CB_in" << ENDL());
         cb_push_back(cb_out, 1);
         cb_push_back(cb_in, 1);
 
         tile_regs_release();
-        DPRINT_PACK(DPRINT << "Iteração " << i << " finalizada" << ENDL());
+        DPRINT_PACK(DPRINT << "PACK: Iteração " << i << " finalizada" << ENDL());
     }
+    DPRINT << "Todas as iterações foram finalizadas" << ENDL();
 }
 }  // namespace NAMESPACE

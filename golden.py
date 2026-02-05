@@ -53,8 +53,8 @@ def jacobi(p0):
 
 
 # Grid parameters
-nx = 64                  # largura (colunas)
-ny = 64                  # altura (linhas)
+nx = 32                  # largura (colunas)
+ny = 32                  # altura (linhas)
 xmin, xmax = 0.0, nx    # Aumentei o domínio X para manter a proporção da malha
 ymin, ymax = 0.0, ny    # Ajustei Y para começar do 0 (mais intuitivo)
 lx = xmax - xmin
@@ -71,8 +71,8 @@ X, Y = np.meshgrid(x, y, indexing='xy')
 p0 = np.zeros((ny, nx), dtype=np.float32)
 
 # Definindo o quadrado centralizado dinamicamente
-tamanho_quadrado_x = 64
-tamanho_quadrado_y = 64
+tamanho_quadrado_x = 10
+tamanho_quadrado_y = 10
 
 centro_y, centro_x = ny // 2, nx // 2
 
