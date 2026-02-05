@@ -118,6 +118,8 @@ void kernel_main() {
         }
 
         noc_async_write_barrier();
+        cb_pop_front(cb_out, 1);
+        cb_pop_front(cb_out, 1); // WARNING: Por que??
 
         DPRINT << "Avisando que as tiles foram enviadas" << ENDL();
 
@@ -141,8 +143,6 @@ void kernel_main() {
         noc_async_full_barrier();  // BUG: talvez essa não seja a barreira correta.
                                    // Se o código não funcionar, tentar fazer um full_barrier
 
-        cb_pop_front(cb_out, 1);
-        cb_pop_front(cb_out, 1);
         DPRINT << "Writer: Iteração " << i << " finalizada" << ENDL();
     }
 

@@ -8,7 +8,7 @@ exec_path = "./run_script.sh"
 # MODES:
 # - python
 # - tenstorrent
-MODE = "tenstorrent"
+MODE = "python"
 print("MODE:", MODE)
 
 sys.setrecursionlimit(2000)
@@ -16,8 +16,7 @@ sys.setrecursionlimit(2000)
 # Esse script serve para eu aprender a fazer um algoritmo simples de
 # Jacobi
 
-max_it = 2
-it = 0
+max_it = 20 
 
 
 def save_to_file(matrix, filename):
@@ -40,54 +39,53 @@ def jacobi(p0):
         subprocess.run(cmd, check=True)
 
         return read_from_file("output.bin", p0.shape)
-    if MODE == "python":
-        global it
-        pnew = p0.copy()
-        if it >= max_it:
-            print("Chegamos na iteração máxima, retornando...")
-            return p0
-        pnew[1:-1, 1:-1] = 0.25 * (p0[0:-2, 1:-1] + p0[2:, 1:-1] +
-                                   p0[1:-1, 0:-2] + p0[1:-1, 2:])
-        it = it + 1
-        return jacobi(pnew)
+    elif MODE == "python":
+        it = 0
+        while (it < max_it):
+            print(f"iteração: {it}")
+            pnew = p0.copy()
+            pnew[1:-1, 1:-1] = 0.25 * (p0[0:-2, 1:-1] + p0[2:, 1:-1] +
+                                       p0[1:-1, 0:-2] + p0[1:-1, 2:])
+            it = it + 1
+            p0 = pnew.copy()
+        return p0
+    else:
+        print(f"UNKOWN MODE: {MODE}")
+
+
+def criar_quadrado(tamanho_quadrado_x, tamanho_quadrado_y):
+    p0 = np.zeros((ny, nx), dtype=np.float32)
+
+    centro_y, centro_x = ny // 2, nx // 2
+
+    # Fatiamento (Slicing) para desenhar o quadrado
+    inicio_y = centro_y - (tamanho_quadrado_y // 2)
+    fim_y = centro_y + (tamanho_quadrado_y // 2)
+    inicio_x = centro_x - (tamanho_quadrado_x // 2)
+    fim_x = centro_x + (tamanho_quadrado_x // 2)
+
+    p0[inicio_y:fim_y, inicio_x:fim_x] = 1
+    return p0
 
 
 # Grid parameters
-nx = 32                  # largura (colunas)
-ny = 32                  # altura (linhas)
-xmin, xmax = 0.0, nx    # Aumentei o domínio X para manter a proporção da malha
-ymin, ymax = 0.0, ny    # Ajustei Y para começar do 0 (mais intuitivo)
+nx = 64                  # largura (colunas)
+ny = 64                  # altura (linhas)
+xmin, xmax = 0.0, nx
+ymin, ymax = 0.0, ny
 lx = xmax - xmin
 ly = ymax - ymin
 dx = lx / (nx-1)
 dy = ly / (ny-1)
 
-x = np.linspace(xmin, xmax)
-y = np.linspace(ymin, ymax)
+x = np.linspace(xmin, xmax, nx)
+y = np.linspace(ymin, ymax, ny)
 X, Y = np.meshgrid(x, y, indexing='xy')
 
-# --- Inicialização da Matriz ---
-# Numpy usa formato (linhas, colunas) -> (ny, nx)
-p0 = np.zeros((ny, nx), dtype=np.float32)
+p0 = criar_quadrado(32, 32)
 
-# Definindo o quadrado centralizado dinamicamente
-tamanho_quadrado_x = 10
-tamanho_quadrado_y = 10
-
-centro_y, centro_x = ny // 2, nx // 2
-
-# Fatiamento (Slicing) para desenhar o quadrado
-inicio_y = centro_y - (tamanho_quadrado_y // 2)
-fim_y = centro_y + (tamanho_quadrado_y // 2)
-inicio_x = centro_x - (tamanho_quadrado_x // 2)
-fim_x = centro_x + (tamanho_quadrado_x // 2)
-
-p0[inicio_y:fim_y, inicio_x:fim_x] = 1
-
-# --- Visualização Simples no Terminal ---
-# Como 32x32 é grande, vamos imprimir de um jeito que dê para ver o desenho
-for linha in p0:
-    print(' '.join(str(x) for x in linha).replace('0', '.').replace('1', '#'))
+# p0 = (np.sin(2 * np.pi * X / lx) * np.cos(2 * np.pi * Y / ly) +
+#       0.5 * np.sin(4 * np.pi * X / lx)).astype(np.float32)
 
 save_to_file(p0, "input.bin")
 print(p0[-1])
@@ -104,6 +102,7 @@ plt.show()
 # Compute the exact solution
 p_e = jacobi(p0)
 plt.figure()
+
 # Usa pcolormesh para criar um mapa de cores 2D de b sobre a grade (X, Y)
 # plt.pcolormesh(X, Y, p_e, shading='auto')
 plt.imshow(p_e, origin="upper", interpolation="nearest")

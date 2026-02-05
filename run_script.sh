@@ -14,4 +14,4 @@ export TT_METAL_DPRINT_CORES="0,0"
 # Valid values are BR,NC,TR0,TR1,TR2,TR*,ER0,ER1,ER*.
 # export TT_METAL_DPRINT_RISCVS=TR*
 
-distrobox enter ubuntu -- /home/gian/Documentos/Unicamp/GeoBench/Tenstorrent/tt-metal/build_Debug/programming_examples/jacobi 10
+distrobox enter ubuntu -- /home/gian/Documentos/Unicamp/GeoBench/Tenstorrent/tt-metal/build_Debug/programming_examples/jacobi 20

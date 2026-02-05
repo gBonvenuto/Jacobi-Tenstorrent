@@ -166,8 +166,8 @@ void MAIN {
         pack_tile(dst_reg, cb_out);
         pack_tile(dst_reg, cb_in);
         DPRINT_PACK(DPRINT << "Enviando resultado para CB_out e CB_in" << ENDL());
-        cb_push_back(cb_out, 1);
         cb_push_back(cb_in, 1);
+        cb_push_back(cb_out, 1);
 
         tile_regs_release();
         DPRINT_PACK(DPRINT << "PACK: Iteração " << i << " finalizada" << ENDL());
