@@ -7,7 +7,7 @@ export TT_METAL_RUNTIME_ROOT="$TT_METAL_HOME"
 
 # Possíveis valores para DPRINT_CORES
 # export TT_METAL_DPRINT_CORES="all"
-export TT_METAL_DPRINT_CORES="0,0"
+export TT_METAL_DPRINT_CORES="0,1"
 # export TT_METAL_DPRINT_CORES="(0,0)-(1,1)"
 # export TT_METAL_DPRINT_CORES="(0,0),(0,1)"
 

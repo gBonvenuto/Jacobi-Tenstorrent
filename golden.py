@@ -64,8 +64,8 @@ def criar_quadrado(tamanho_quadrado_x, tamanho_quadrado_y):
 
 
 # Grid parameters
-nx = 64                  # largura (colunas)
-ny = 64                  # altura (linhas)
+nx = 128                  # largura (colunas)
+ny = 128                  # altura (linhas)
 xmin, xmax = 0.0, nx
 ymin, ymax = 0.0, ny
 lx = xmax - xmin
@@ -77,7 +77,7 @@ x = np.linspace(xmin, xmax, nx)
 y = np.linspace(ymin, ymax, ny)
 X, Y = np.meshgrid(x, y, indexing='xy')
 
-p0 = criar_quadrado(32, 32)
+p0 = criar_quadrado(64, 64)
 
 # p0 = (np.sin(2 * np.pi * X / lx) * np.cos(2 * np.pi * Y / ly) +
 #       0.5 * np.sin(4 * np.pi * X / lx)).astype(np.float32)
@@ -91,7 +91,7 @@ plt.imshow(p0, origin="upper", interpolation="nearest")
 plt.title("Input")
 plt.xlabel('X')
 plt.ylabel('Y')
-plt.colorbar(label='Valor de b')
+plt.colorbar()
 plt.show()
 
 # Compute the exact solution
@@ -104,5 +104,5 @@ plt.imshow(p_e, origin="upper", interpolation="nearest")
 plt.title("Output")
 plt.xlabel('X')
 plt.ylabel('Y')
-plt.colorbar(label='Valor de b')
+plt.colorbar()
 plt.show()
