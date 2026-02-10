@@ -81,11 +81,10 @@ void kernel_main() {
     const auto semaforo_esquerda_noc = (has_left) ? get_noc_addr(phys_x - 1, phys_y, semaphore_writer) : 0;
     const auto semaforo_direita_noc = (has_right) ? get_noc_addr(phys_x + 1, phys_y, semaphore_writer) : 0;
 
-    const auto cb_out_ptr = get_write_ptr(cb_out);
-    const auto cb_top_ptr = get_read_ptr(cb_top);
-    const auto cb_bottom_ptr = get_read_ptr(cb_bottom);
-    const auto cb_left_ptr = get_read_ptr(cb_left);
-    const auto cb_right_ptr = get_read_ptr(cb_right);
+    const auto cb_top_ptr = get_write_ptr(cb_top);
+    const auto cb_bottom_ptr = get_write_ptr(cb_bottom);
+    const auto cb_left_ptr = get_write_ptr(cb_left);
+    const auto cb_right_ptr = get_write_ptr(cb_right);
 
     const uint64_t top_core_noc_addr = (has_top) ? get_noc_addr(phys_x, phys_y - 1, cb_bottom_ptr) : 0;
     const uint64_t bottom_core_noc_addr = (has_bottom) ? get_noc_addr(phys_x, phys_y + 1, cb_top_ptr) : 0;
@@ -98,6 +97,7 @@ void kernel_main() {
     for (uint32_t i = 0; i < n_iterations; i++) {
         DPRINT << "Writer: Iniciando iteração " << i << ENDL();
         cb_wait_front(cb_out, 1);
+        auto cb_out_ptr = get_read_ptr(cb_out);
 
         DPRINT << "Esperando os vizinhos estarem prontos para receber" << ENDL();
         noc_semaphore_wait(semaphore_reader_ptr, quantidade_vizinhos * (i + 1));
@@ -119,7 +119,7 @@ void kernel_main() {
 
         noc_async_write_barrier();
         cb_pop_front(cb_out, 1);
-        cb_pop_front(cb_out, 1); // WARNING: Por que??
+        // cb_pop_front(cb_out, 1); // WARNING: Por que??
 
         DPRINT << "Avisando que as tiles foram enviadas" << ENDL();
 
@@ -147,7 +147,7 @@ void kernel_main() {
     }
 
     // Envia o último valor de volta para a DRAM
-    DPRINT << "Esperando o cb_out" << ENDL();
+    DPRINT << "Esperando o último cb_out" << ENDL();
     cb_wait_front(cb_out, 1);
     noc_async_write_tile(tile_offset, in, get_read_ptr(cb_out));
     noc_async_write_barrier();

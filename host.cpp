@@ -280,7 +280,7 @@ int main(int argc, char** argv) {
         CreateCircularBuffer(
             program,
             all_cores,
-            CircularBufferConfig(tile_size_bytes, {{cb_out, tt::DataFormat::Float16_b}})
+            CircularBufferConfig(2 * tile_size_bytes, {{cb_out, tt::DataFormat::Float16_b}})
                 .set_page_size(cb_out, tile_size_bytes));
 
         // INFO: Semáforos

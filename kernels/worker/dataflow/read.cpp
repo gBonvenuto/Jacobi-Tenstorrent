@@ -137,25 +137,11 @@ void kernel_main() {
 
     // Lemos a nossa tile da DRAM
     cb_reserve_back(cb_in, 1);
-    cb_reserve_back(cb_out, 1);
 
-    // TODO:
-    // para simplificar estou lendo a mesma informação duas vezes na DRAM.
-    // Mas talvez seria melhor ler apenas uma única vez da DRAM no cb_in e copiar
-    // localmente do CB_in para o CB_out.
-    // Esse seria um experimento interessante para testar o overhead de leitura
-    // da DRAM.
+    DPRINT << "Lendo o CB_in inicial" << ENDL();
     noc_async_read_tile(tile_offset, in, get_write_ptr(cb_in));
-    noc_async_read_tile(tile_offset, in, get_write_ptr(cb_out));
-
-    cb_push_back(cb_in, 1);
-    DPRINT << "Escrevendo no cb_out antes da primeira iteração" << ENDL();
-    cb_push_back(cb_out, 1);  // Eviamos pro cb_out para podermos enviá-la para
-                              // os vizinhos antes da primeira iteração.
-                              // Nas iterações seguintes é o Compute quem
-                              // atualiza o cb_out
-
     noc_async_read_barrier();
+    cb_push_back(cb_in, 1);
 
     const auto semaforo_cima_noc = (has_top) ? get_noc_addr(phys_x, phys_y - 1, semaphore_reader) : 0;
     const auto semaforo_baixo_noc = (has_bottom) ? get_noc_addr(phys_x, phys_y + 1, semaphore_reader) : 0;

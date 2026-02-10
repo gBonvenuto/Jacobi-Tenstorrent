@@ -65,6 +65,25 @@ void MAIN {
     cb_wait_front(cb_in, 1);
     DPRINT_UNPACK(DPRINT << "Recebi as tiles auxiliares" << ENDL());
 
+    // Copiando o CB in para o writer para ele copiar para todos os vizinhos
+
+    copy_tile_init(cb_in);
+    ckernel::tile_regs_acquire();
+
+    ckernel::copy_tile(cb_in, 0, dst_reg);
+
+    ckernel::tile_regs_commit();
+
+    ckernel::cb_reserve_back(cb_in, 1);
+
+    ckernel::tile_regs_wait();
+
+    ckernel::pack_tile(dst_reg, cb_out);
+
+    ckernel::tile_regs_release();
+
+    ckernel::cb_push_back(cb_out, 1);
+
     for (uint32_t i = 0; i < n_iterations; i++) {
         DPRINT_MATH(DPRINT << "MATH: Iniciando iteração " << i << ENDL());
         DPRINT_UNPACK(DPRINT << "Esperando as vizinhas" << ENDL());
@@ -80,15 +99,15 @@ void MAIN {
 
         // Limpar registrador antes de usar
         {
-            MATH(DPRINT << "limpando registradores" << ENDL(););
+            MATH(DPRINT << "limpando registradores" << ENDL());
             fill_tile_init();
             fill_tile_int(dst_reg, 0);
         }
 
         // Utilizando a matriz L
         {
-            DPRINT_MATH(DPRINT << "Shift L" << ENDL(););
-            mm_init_short(cb_in, cb_LU);
+            DPRINT_MATH(DPRINT << "Shift L" << ENDL());
+            ckernel::mm_init(cb_in, cb_LU, cb_out);
 
             matmul_tiles(cb_in, cb_LU, 0, 0, dst_reg);  // Matriz esquerda
             DPRINT_MATH(DPRINT << "cheguei aqui" << ENDL(););
@@ -157,19 +176,22 @@ void MAIN {
 
         tile_regs_commit();
 
-
         tile_regs_wait();
 
         cb_reserve_back(cb_out, 1);
-        cb_reserve_back(cb_in, 1);
+        ckernel::cb_reserve_back(cb_in, 1);
         // Então mandamos o resultado para o cb_out
         pack_tile(dst_reg, cb_out);
+        // Reconfigurando do cb_out para o cb_in
+        // se eles forem o mesmo formato, nada acontece,
+        // mas é uma boa prática fazer esse reconfig
+        ckernel::pack_reconfig_data_format(cb_out, cb_in);
         pack_tile(dst_reg, cb_in);
         DPRINT_PACK(DPRINT << "Enviando resultado para CB_out e CB_in" << ENDL());
-        cb_push_back(cb_in, 1);
-        cb_push_back(cb_out, 1);
-
         tile_regs_release();
+
+        cb_push_back(cb_out, 1);
+        cb_push_back(cb_in, 1);
         DPRINT_PACK(DPRINT << "PACK: Iteração " << i << " finalizada" << ENDL());
     }
     DPRINT << "Todas as iterações foram finalizadas" << ENDL();
